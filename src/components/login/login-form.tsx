@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import {
   IconAdmin,
@@ -13,34 +14,80 @@ import {
   IconTeacher,
   IconUser,
 } from "@/components/icons";
+import { ApiError } from "@/lib/api";
+import {
+  loginRequest,
+  ROLE_LABEL,
+  saveSession,
+  type UserRole,
+} from "@/lib/auth";
 
-type Role = "student" | "teacher" | "admin";
-
-const roles: {
-  key: Role;
-  label: string;
-  icon: typeof IconStudent;
-}[] = [
-  { key: "student", label: "学生", icon: IconStudent },
-  { key: "teacher", label: "教师", icon: IconTeacher },
-  { key: "admin", label: "管理员", icon: IconAdmin },
+const roles = [
+  { key: "student" as const, label: "学生", icon: IconStudent },
+  { key: "teacher" as const, label: "教师", icon: IconTeacher },
+  { key: "admin" as const, label: "管理", icon: IconAdmin },
 ];
 
 export function LoginForm() {
-  const [role, setRole] = useState<Role>("student");
+  const router = useRouter();
+  const [role, setRole] = useState<UserRole>("student");
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const username = account.trim();
+
+    if (username.length < 2) {
+      setError("请输入有效的学号 / 工号");
+      return;
+    }
+    if (password.length < 6) {
+      setError("密码至少 6 位");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const result = await loginRequest({
+        username,
+        password,
+        clientType: "web",
+      });
+
+      if (result.user.role !== role) {
+        setError(
+          `该账号身份为「${ROLE_LABEL[result.user.role]}」，请切换到对应身份后登录`,
+        );
+        return;
+      }
+
+      saveSession(result, remember);
+      router.replace("/");
+      router.refresh();
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "登录失败，请稍后重试";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit}>
       <div
-        className="grid grid-cols-3 rounded-xl bg-[#f0f4f9] p-1"
+        className="grid grid-cols-3 gap-1 rounded-xl bg-[var(--fill)] p-1"
         role="tablist"
         aria-label="登录身份"
       >
@@ -53,113 +100,131 @@ export function LoginForm() {
               type="button"
               role="tab"
               aria-selected={active}
-              onClick={() => setRole(item.key)}
+              disabled={loading}
+              onClick={() => {
+                setRole(item.key);
+                setError("");
+              }}
               className={[
-                "relative flex h-11 items-center justify-center gap-2 rounded-lg text-sm transition duration-200",
+                "flex h-10 items-center justify-center gap-1.5 rounded-[10px] text-[13px] transition disabled:opacity-60",
                 active
-                  ? "bg-surface text-accent shadow-[0_2px_8px_rgba(16,29,50,0.08)]"
-                  : "text-mute hover:text-ink",
+                  ? "bg-white font-semibold text-[var(--accent)] shadow-[0_1px_2px_rgba(23,33,43,0.07)]"
+                  : "text-[var(--ink-faint)] hover:text-[var(--ink-soft)]",
               ].join(" ")}
             >
-              <span
-                className={[
-                  "flex size-7 items-center justify-center rounded-md transition",
-                  active ? "bg-accent-soft" : "bg-transparent",
-                ].join(" ")}
-              >
-                <RoleIcon size={17} />
-              </span>
-              <span className="font-medium">{item.label}</span>
-              {active ? (
-                <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-orange" />
-              ) : null}
+              <RoleIcon size={14} />
+              {item.label}
             </button>
           );
         })}
       </div>
 
-      <label className="block space-y-2.5">
-        <span className="text-[13px] font-semibold text-ink-soft">账号</span>
-        <div className="group flex items-center gap-3 rounded-xl border border-line bg-[#fbfcfe] px-3.5 transition focus-within:border-accent focus-within:bg-surface focus-within:shadow-[0_0_0_3px_var(--focus)]">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent transition group-focus-within:bg-accent group-focus-within:text-white">
-            <IconUser size={17} />
-          </span>
+      <label className="mt-1 block space-y-2">
+        <span className="text-[13px] font-medium text-[var(--ink-soft)]">账号</span>
+        <div className="group flex h-11 items-center gap-2.5 rounded-xl border border-[var(--line)] bg-white px-3.5 transition focus-within:border-[var(--accent)] focus-within:ring-[3px] focus-within:ring-[var(--accent)]/12">
+          <IconUser
+            size={16}
+            className="shrink-0 text-[var(--ink-faint)] transition group-focus-within:text-[var(--accent)]"
+          />
           <input
             value={account}
             onChange={(event) => setAccount(event.target.value)}
-            className="h-12 w-full bg-transparent text-[15px] text-ink outline-none placeholder:text-mute/65"
+            className="h-full min-w-0 flex-1 bg-transparent text-[14px] text-[var(--ink)] outline-none placeholder:text-[var(--ink-faint)]"
             placeholder="请输入学号 / 工号"
             autoComplete="username"
+            disabled={loading}
           />
         </div>
       </label>
 
-      <label className="block space-y-2.5">
-        <span className="text-[13px] font-semibold text-ink-soft">密码</span>
-        <div className="group flex items-center gap-3 rounded-xl border border-line bg-[#fbfcfe] px-3.5 transition focus-within:border-accent focus-within:bg-surface focus-within:shadow-[0_0_0_3px_var(--focus)]">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent transition group-focus-within:bg-accent group-focus-within:text-white">
-            <IconLock size={17} />
-          </span>
+      <label className="block space-y-2">
+        <span className="text-[13px] font-medium text-[var(--ink-soft)]">密码</span>
+        <div className="group flex h-11 items-center gap-2.5 rounded-xl border border-[var(--line)] bg-white px-3.5 transition focus-within:border-[var(--accent)] focus-within:ring-[3px] focus-within:ring-[var(--accent)]/12">
+          <IconLock
+            size={16}
+            className="shrink-0 text-[var(--ink-faint)] transition group-focus-within:text-[var(--accent)]"
+          />
           <input
             type={showPassword ? "text" : "password"}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="h-12 w-full bg-transparent text-[15px] text-ink outline-none placeholder:text-mute/65"
+            className="h-full min-w-0 flex-1 bg-transparent text-[14px] text-[var(--ink)] outline-none placeholder:text-[var(--ink-faint)]"
             placeholder="请输入密码"
             autoComplete="current-password"
+            disabled={loading}
           />
           <button
             type="button"
             onClick={() => setShowPassword((value) => !value)}
-            className="flex size-8 items-center justify-center rounded-lg text-mute transition hover:bg-accent-soft hover:text-accent"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--ink-faint)] transition hover:bg-black/4 hover:text-[var(--ink)]"
             aria-label={showPassword ? "隐藏密码" : "显示密码"}
+            disabled={loading}
           >
-            {showPassword ? <IconEyeOff size={18} /> : <IconEye size={18} />}
+            {showPassword ? <IconEyeOff size={16} /> : <IconEye size={16} />}
           </button>
         </div>
       </label>
 
-      <div className="flex items-center justify-between text-sm">
-        <label className="inline-flex cursor-pointer items-center gap-2.5 text-ink-soft">
-          <span className="relative inline-flex size-5 items-center justify-center">
+      <div className="flex items-center justify-between pt-0.5 text-[13px]">
+        <label className="inline-flex cursor-pointer items-center gap-2 text-[var(--ink-soft)]">
+          <span className="relative flex size-4 items-center justify-center">
             <input
               type="checkbox"
               checked={remember}
               onChange={(event) => setRemember(event.target.checked)}
-              className="absolute inset-0 z-10 cursor-pointer opacity-0"
+              className="absolute inset-0 cursor-pointer opacity-0"
+              disabled={loading}
             />
             <span
               className={[
-                "flex size-[18px] items-center justify-center rounded-[4px] border transition",
+                "flex size-4 items-center justify-center rounded-[4px] border transition",
                 remember
-                  ? "border-accent bg-accent text-white"
-                  : "border-line bg-surface",
+                  ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                  : "border-[var(--line)] bg-white",
               ].join(" ")}
             >
-              {remember ? <IconCheck size={12} /> : null}
+              {remember ? <IconCheck size={10} /> : null}
             </span>
           </span>
           记住我
         </label>
-        <Link href="#" className="text-accent transition hover:opacity-80">
+        <Link
+          href="#"
+          className="text-[var(--accent)] transition hover:text-[var(--accent-hover)]"
+        >
           忘记密码？
         </Link>
       </div>
 
+      {error ? (
+        <p
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-[13px] leading-5 text-red-600"
+        >
+          {error}
+        </p>
+      ) : null}
+
       <button
         type="submit"
-        className="group flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-accent text-sm font-semibold tracking-[0.08em] text-white shadow-[0_10px_22px_rgba(23,74,139,0.22)] transition hover:-translate-y-0.5 hover:bg-accent-deep hover:shadow-[0_14px_28px_rgba(23,74,139,0.26)]"
+        disabled={loading}
+        className="group mt-1 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--accent)] text-[14px] font-semibold text-white shadow-[0_8px_20px_-8px_rgba(20,112,105,0.65)] transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-70"
       >
-        验证身份并登录
-        <IconArrowRight
-          size={16}
-          className="transition-transform group-hover:translate-x-1"
-        />
+        {loading ? "登录中…" : "进入考试空间"}
+        {!loading ? (
+          <IconArrowRight
+            size={15}
+            className="transition-transform group-hover:translate-x-0.5"
+          />
+        ) : null}
       </button>
 
-      <p className="text-center text-sm text-mute">
+      <p className="pt-1 text-center text-[13px] text-[var(--ink-faint)]">
         还没有账号？{" "}
-        <Link href="#" className="font-medium text-accent hover:opacity-80">
+        <Link
+          href="#"
+          className="font-medium text-[var(--ink)] transition hover:text-[var(--accent)]"
+        >
           立即注册
         </Link>
       </p>

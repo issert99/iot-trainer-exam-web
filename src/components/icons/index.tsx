@@ -25,45 +25,23 @@ function Svg({
   );
 }
 
-/** 知测品牌标：知识书页与测评勾选 */
+/** 知测品牌标：答卷核验 */
 export function IconBrandMark({ className, size = 28 }: IconProps) {
   return (
     <Svg size={size} className={className}>
       <path
-        d="M3.6 5.8c3.05-.7 5.85-.05 8.4 2v11.1c-2.55-2.05-5.35-2.7-8.4-2V5.8Z"
-        fill="currentColor"
-        fillOpacity="0.13"
+        d="M7.2 8.4h9.6M7.2 12h6.4"
         stroke="currentColor"
-        strokeWidth="1.35"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M20.4 5.8c-3.05-.7-5.85-.05-8.4 2v11.1c2.55-2.05 5.35-2.7 8.4-2V5.8Z"
-        fill="currentColor"
-        fillOpacity="0.06"
-        stroke="currentColor"
-        strokeWidth="1.35"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M12 7.8v11.1"
-        stroke="currentColor"
-        strokeWidth="1.35"
+        strokeWidth="1.55"
         strokeLinecap="round"
+        strokeOpacity="0.4"
       />
       <path
-        d="m14.4 12.5 1.55 1.55 3.15-3.35"
-        stroke="var(--orange)"
-        strokeWidth="1.65"
+        d="m7.5 16.4 2.6 2.5 6.6-6.8"
+        stroke="currentColor"
+        strokeWidth="1.85"
         strokeLinecap="round"
         strokeLinejoin="round"
-      />
-      <path
-        d="M5.9 9h3.5M5.9 11.6h3.5"
-        stroke="currentColor"
-        strokeWidth="1.1"
-        strokeLinecap="round"
-        strokeOpacity="0.62"
       />
     </Svg>
   );
