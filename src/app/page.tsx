@@ -22,6 +22,10 @@ export default function HomePage() {
       router.replace("/login");
       return;
     }
+    if (stored.role === "admin") {
+      router.replace("/admin");
+      return;
+    }
     setUser(stored);
     setReady(true);
   }, [router]);

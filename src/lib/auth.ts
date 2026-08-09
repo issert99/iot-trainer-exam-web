@@ -1,6 +1,7 @@
 import { apiRequest } from "@/lib/api";
 
 export type UserRole = "student" | "teacher" | "admin";
+export type UserStatus = "active" | "inactive" | "locked";
 export type ClientType = "web" | "app";
 
 export type PublicUser = {
@@ -15,7 +16,7 @@ export type PublicUser = {
   classId: string | null;
   department: string | null;
   title: string | null;
-  status: "active" | "inactive" | "locked";
+  status: UserStatus;
 };
 
 export type LoginResult = {

@@ -12,6 +12,8 @@
   --fill: #f2f5f7;
   --accent: #147069;
   --accent-hover: #115c55;
+  --admin-bg: #eef3f2;
+  --admin-card: #ffffff;
 }
 
 @theme inline {
@@ -48,6 +50,18 @@
   }
 }
 
+@keyframes soft-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
 .intro {
   animation: fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -76,6 +90,71 @@
   animation-delay: 1.8s;
 }
 
+.admin-enter {
+  animation: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.admin-card {
+  animation: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.admin-card-d1 {
+  animation-delay: 0.04s;
+}
+.admin-card-d2 {
+  animation-delay: 0.08s;
+}
+.admin-card-d3 {
+  animation-delay: 0.12s;
+}
+.admin-card-d4 {
+  animation-delay: 0.16s;
+}
+.admin-card-d5 {
+  animation-delay: 0.2s;
+}
+.admin-card-d6 {
+  animation-delay: 0.24s;
+}
+
+.status-dot {
+  animation: soft-pulse 2.4s ease-in-out infinite;
+}
+
+.admin-mesh {
+  background-image:
+    radial-gradient(rgba(20, 112, 105, 0.045) 0.8px, transparent 0.8px);
+  background-size: 22px 22px;
+}
+
+/* 管理台内容区滚动条 */
+.admin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(20, 112, 105, 0.35) transparent;
+}
+
+.admin-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.admin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  margin-block: 8px;
+}
+
+.admin-scroll::-webkit-scrollbar-thumb {
+  background: rgba(20, 112, 105, 0.28);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.admin-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(20, 112, 105, 0.45);
+  background-clip: content-box;
+  border: 2px solid transparent;
+}
+
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
@@ -101,7 +180,10 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .intro,
-  .net-node {
+  .net-node,
+  .admin-enter,
+  .admin-card,
+  .status-dot {
     animation: none;
   }
 }

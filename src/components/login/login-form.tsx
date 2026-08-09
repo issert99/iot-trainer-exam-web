@@ -69,7 +69,7 @@ export function LoginForm() {
       }
 
       saveSession(result, remember);
-      router.replace("/");
+      router.replace(result.user.role === "admin" ? "/admin" : "/");
       router.refresh();
     } catch (err) {
       const message =

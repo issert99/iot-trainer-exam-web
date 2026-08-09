@@ -346,3 +346,132 @@ export function IconArrowRight({ className, size = 18 }: IconProps) {
     </Svg>
   );
 }
+
+export function IconOverview({ className, size = 20 }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <rect x="3.5" y="3.5" width="7.2" height="7.2" rx="1.8" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="13.3" y="3.5" width="7.2" height="7.2" rx="1.8" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="3.5" y="13.3" width="7.2" height="7.2" rx="1.8" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="13.3" y="13.3" width="7.2" height="7.2" rx="1.8" stroke="currentColor" strokeWidth="1.5" />
+    </Svg>
+  );
+}
+
+export function IconUsers({ className, size = 20 }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <circle cx="9" cy="8" r="2.8" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M3.8 18c.6-2.6 2.5-3.9 5.2-3.9s4.6 1.3 5.2 3.9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="16.2" cy="8.4" r="2.2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M15.2 14.2c1.9.2 3.3 1.2 3.9 3.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function IconRoles({ className, size = 20 }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <path d="M8.2 10.5V8.3a3.8 3.8 0 0 1 7.6 0v2.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <rect x="5.5" y="10.5" width="13" height="8.5" rx="2.2" stroke="currentColor" strokeWidth="1.5" />
+    </Svg>
+  );
+}
+
+export function IconSemester({ className, size = 20 }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <rect x="4" y="5" width="16" height="15" rx="2.2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M4 9.5h16M9 3.8v3.2M15 3.8v3.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M8.2 13.2h3.2M8.2 16.2h7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function IconLogs({ className, size = 20 }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <path d="M7 4.2h7.2L17.8 8v11a1.6 1.6 0 0 1-1.6 1.6H7A1.8 1.8 0 0 1 5.2 18.8V6A1.8 1.8 0 0 1 7 4.2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M14.2 4.3V8h3.5M8.4 12h7M8.4 15.2h4.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function IconSettings({ className, size = 20 }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M12 3.6v2.1M12 18.3v2.1M3.6 12h2.1M18.3 12h2.1M6.1 6.1l1.5 1.5M16.4 16.4l1.5 1.5M17.9 6.1l-1.5 1.5M7.6 16.4l-1.5 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function IconBackup({ className, size = 20 }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <ellipse cx="12" cy="6.5" rx="6.8" ry="2.4" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5.2 6.5v5.2c0 1.3 3 2.4 6.8 2.4s6.8-1.1 6.8-2.4V6.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5.2 11.7v5.2c0 1.3 3 2.4 6.8 2.4s6.8-1.1 6.8-2.4v-5.2" stroke="currentColor" strokeWidth="1.5" />
+    </Svg>
+  );
+}
+
+export function IconTrendUp({ className, size = 14 }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <path d="M4 15 10.5 8.5 13.5 11.5 20 5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M14.5 5H20v5.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function IconLogout({ className, size = 18 }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <path d="M10 4.5H7.2A2.2 2.2 0 0 0 5 6.7v10.6A2.2 2.2 0 0 0 7.2 19.5H10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M14 8.5 18 12l-4 3.5M18 12H9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function IconSearch({ className, size = 18 }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <circle cx="11" cy="11" r="6.2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M15.8 15.8 20 20" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function IconPlus({ className, size = 18 }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function IconUpload({ className, size = 18 }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <path d="M12 15.5V5.8M8.2 9l3.8-3.8L15.8 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5 16.2V18a1.6 1.6 0 0 0 1.6 1.6h10.8A1.6 1.6 0 0 0 19 18v-1.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function IconChevronLeft({ className, size = 16 }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <path d="M14 5 8 12l6 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function IconChevronRight({ className, size = 16 }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <path d="M10 5l6 7-6 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
