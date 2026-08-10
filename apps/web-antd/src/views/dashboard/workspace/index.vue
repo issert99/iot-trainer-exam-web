@@ -49,8 +49,17 @@ const projectItems: WorkbenchProjectItem[] = [
     date: '今天',
     group: '组织',
     icon: 'lucide:users',
-    title: '用户与班级',
+    title: '用户管理',
     url: '/exam/users',
+  },
+  {
+    color: '#3fb27f',
+    content: '维护教学班级信息。',
+    date: '今天',
+    group: '组织',
+    icon: 'lucide:school',
+    title: '班级管理',
+    url: '/exam/classes',
   },
   {
     color: '#e18525',
@@ -82,8 +91,14 @@ const quickNavItems: WorkbenchQuickNavItem[] = [
   {
     color: '#bf0c2c',
     icon: 'ion:people-outline',
-    title: '用户与班级',
+    title: '用户管理',
     url: '/exam/users',
+  },
+  {
+    color: '#3fb27f',
+    icon: 'ion:school-outline',
+    title: '班级管理',
+    url: '/exam/classes',
   },
   {
     color: '#e18525',

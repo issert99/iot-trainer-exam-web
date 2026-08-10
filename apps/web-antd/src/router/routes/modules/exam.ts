@@ -13,6 +13,7 @@ const routes: RouteRecordRaw[] = [
     },
     name: 'Exam',
     path: '/exam',
+    redirect: '/exam/users',
     children: [
       {
         name: 'ExamUsers',
@@ -21,7 +22,17 @@ const routes: RouteRecordRaw[] = [
         meta: {
           authority: ['admin'],
           icon: 'lucide:users',
-          title: '用户与班级',
+          title: '用户管理',
+        },
+      },
+      {
+        name: 'ExamClasses',
+        path: '/exam/classes',
+        component: () => import('#/views/exam/classes/index.vue'),
+        meta: {
+          authority: ['admin'],
+          icon: 'lucide:school',
+          title: '班级管理',
         },
       },
       {
@@ -70,7 +81,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('#/views/exam/placeholder/index.vue'),
         meta: {
           authority: ['admin'],
-          icon: 'lucide:database-backup',
+          icon: 'lucide:database',
           title: '数据备份',
         },
       },

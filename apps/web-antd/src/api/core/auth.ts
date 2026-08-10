@@ -1,3 +1,5 @@
+import type { ExamPublicUser } from './user';
+
 import { baseRequestClient, requestClient } from '#/api/request';
 
 export namespace AuthApi {
@@ -13,7 +15,7 @@ export namespace AuthApi {
     clientType?: string;
     expiresIn?: string;
     tokenType?: string;
-    user?: Record<string, unknown>;
+    user?: ExamPublicUser;
   }
 
   export interface RefreshTokenResult {
