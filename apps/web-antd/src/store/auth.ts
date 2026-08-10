@@ -7,7 +7,7 @@ import { LOGIN_PATH } from '@vben/constants';
 import { preferences } from '@vben/preferences';
 import { resetAllStores, useAccessStore, useUserStore } from '@vben/stores';
 
-import { notification } from 'ant-design-vue';
+import { message, notification } from 'ant-design-vue';
 import { defineStore } from 'pinia';
 
 import { getAccessCodesApi, getUserInfoApi, loginApi, logoutApi } from '#/api';
@@ -39,6 +39,15 @@ export const useAuthStore = defineStore('auth', () => {
           userStore.setUserInfo(userInfo);
         } else {
           userInfo = await fetchUserInfo();
+        }
+
+        const selectedRole = params.role as string | undefined;
+        const actualRole = userInfo?.roles?.[0];
+        if (selectedRole && actualRole && selectedRole !== actualRole) {
+          accessStore.setAccessToken(null);
+          userStore.setUserInfo(null);
+          message.error($t('authentication.roleMismatch'));
+          return { userInfo: null };
         }
 
         const accessCodes = await getAccessCodesApi();

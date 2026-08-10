@@ -1,0 +1,11 @@
+{
+  "pageTitle": "知测 · 智能考试测评平台",
+  "pageDesc": "组卷、考试、阅卷与学情分析一站式管理",
+  "loginSubtitle": "请选择身份并输入账号信息以开始使用",
+  "selectRole": "登录身份",
+  "selectRoleTip": "请选择登录身份",
+  "roleAdmin": "管理员",
+  "roleTeacher": "教师",
+  "roleStudent": "学生",
+  "roleMismatch": "所选身份与账号角色不匹配，请重新选择"
+}

@@ -3,9 +3,13 @@ import type { ExamPublicUser } from './user';
 import { baseRequestClient, requestClient } from '#/api/request';
 
 export namespace AuthApi {
+  /** 登录身份（与考试后端角色一致） */
+  export type LoginRole = 'admin' | 'student' | 'teacher';
+
   /** 登录接口参数 */
   export interface LoginParams {
     password?: string;
+    role?: LoginRole;
     username?: string;
   }
 
@@ -28,6 +32,7 @@ export namespace AuthApi {
  * 登录（考试后端：POST /auth/login）
  */
 export async function loginApi(data: AuthApi.LoginParams) {
+  // 后端 DTO 不接受 role，身份仅前端选择并在登录后校验
   return requestClient.post<AuthApi.LoginResult>('/auth/login', {
     username: data.username,
     password: data.password,

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-label="知测">
+  <defs>
+    <linearGradient id="zhice-bg-dark" x1="8" y1="2" x2="56" y2="62" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6B9BFF"/>
+      <stop offset="1" stop-color="#3B6AF5"/>
+    </linearGradient>
+    <linearGradient id="zhice-sheen-dark" x1="18" y1="8" x2="40" y2="28" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="64" height="64" rx="16" fill="url(#zhice-bg-dark)"/>
+  <path d="M16 0h32a16 16 0 0 1 16 16v8c-12 8-36 8-48 0V16A16 16 0 0 1 16 0Z" fill="url(#zhice-sheen-dark)"/>
+
+  <rect x="18" y="15" width="28" height="34" rx="7" fill="#fff" fill-opacity=".96"/>
+  <rect x="24" y="22" width="12" height="2.4" rx="1.2" fill="#3B6AF5" fill-opacity=".22"/>
+  <rect x="24" y="27.5" width="16" height="2.4" rx="1.2" fill="#3B6AF5" fill-opacity=".16"/>
+  <rect x="24" y="33" width="10" height="2.4" rx="1.2" fill="#3B6AF5" fill-opacity=".12"/>
+
+  <circle cx="40.5" cy="40.5" r="9" fill="#3B6AF5"/>
+  <path
+    d="m36.4 40.6 2.6 2.6 5.4-5.8"
+    stroke="#fff"
+    stroke-width="2.4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

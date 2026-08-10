@@ -21,6 +21,15 @@ export const overridesPreferences = defineOverridesPreferences({
     enableRefreshToken: false,
     name: import.meta.env.VITE_APP_TITLE,
   },
+  copyright: {
+    companyName: '知测',
+    companySiteLink: '',
+    date: '2026',
+  },
+  logo: {
+    source: '/logo.svg?v=4',
+    sourceDark: '/logo-dark.svg?v=4',
+  },
 });
 
 export const preferencesExtension =

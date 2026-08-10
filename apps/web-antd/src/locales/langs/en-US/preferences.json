@@ -1,0 +1,30 @@
+{
+  "antd": {
+    "tabLabel": "Business",
+    "title": "Business Preferences",
+    "fields": {
+      "enableFormFullscreen": {
+        "label": "Form fullscreen",
+        "tip": "Allow forms to enter fullscreen editing"
+      },
+      "tenantMode": {
+        "label": "Tenant mode",
+        "options": {
+          "single": {
+            "label": "Single tenant"
+          },
+          "multi": {
+            "label": "Multi tenant"
+          }
+        }
+      },
+      "defaultTableSize": {
+        "label": "Default table page size"
+      },
+      "reportTitle": {
+        "label": "Report title",
+        "placeholder": "Enter default report title"
+      }
+    }
+  }
+}

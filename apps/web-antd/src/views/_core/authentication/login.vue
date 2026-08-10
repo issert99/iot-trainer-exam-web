@@ -1,11 +1,12 @@
 <script lang="ts" setup>
-import type { VbenFormSchema } from '@vben/common-ui';
+import type { VbenFormSchema } from '#/adapter/form';
 
 import { computed } from 'vue';
 
-import { AuthenticationLogin, z } from '@vben/common-ui';
+import { AuthenticationLogin } from '@vben/common-ui';
 import { $t } from '@vben/locales';
 
+import { z } from '#/adapter/form';
 import { useAuthStore } from '#/store';
 
 defineOptions({ name: 'Login' });
@@ -14,6 +15,25 @@ const authStore = useAuthStore();
 
 const formSchema = computed((): VbenFormSchema[] => {
   return [
+    {
+      component: 'RadioGroup',
+      componentProps: {
+        buttonStyle: 'solid',
+        class: 'login-role-group',
+        optionType: 'button',
+        options: [
+          { label: $t('authentication.roleAdmin'), value: 'admin' },
+          { label: $t('authentication.roleTeacher'), value: 'teacher' },
+          { label: $t('authentication.roleStudent'), value: 'student' },
+        ],
+        size: 'large',
+      },
+      defaultValue: 'admin',
+      fieldName: 'role',
+      rules: z.enum(['admin', 'student', 'teacher'], {
+        errorMap: () => ({ message: $t('authentication.selectRoleTip') }),
+      }),
+    },
     {
       component: 'VbenInput',
       componentProps: {
@@ -48,3 +68,15 @@ const formSchema = computed((): VbenFormSchema[] => {
     @submit="authStore.authLogin"
   />
 </template>
+
+<style>
+.login-role-group {
+  display: flex;
+  width: 100%;
+}
+
+.login-role-group .ant-radio-button-wrapper {
+  flex: 1;
+  text-align: center;
+}
+</style>

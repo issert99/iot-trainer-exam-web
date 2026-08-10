@@ -1,0 +1,11 @@
+{
+  "pageTitle": "Zhice · Smart Exam Platform",
+  "pageDesc": "Exam creation, delivery, grading and analytics in one place",
+  "loginSubtitle": "Select your role and enter your account to continue",
+  "selectRole": "Sign in as",
+  "selectRoleTip": "Please select a role",
+  "roleAdmin": "Admin",
+  "roleTeacher": "Teacher",
+  "roleStudent": "Student",
+  "roleMismatch": "Selected role does not match this account"
+}

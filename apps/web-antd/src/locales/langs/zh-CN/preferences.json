@@ -1,0 +1,30 @@
+{
+  "antd": {
+    "tabLabel": "业务",
+    "title": "业务偏好",
+    "fields": {
+      "enableFormFullscreen": {
+        "label": "表单全屏",
+        "tip": "打开后，表单支持全屏编辑"
+      },
+      "tenantMode": {
+        "label": "租户模式",
+        "options": {
+          "single": {
+            "label": "单租户"
+          },
+          "multi": {
+            "label": "多租户"
+          }
+        }
+      },
+      "defaultTableSize": {
+        "label": "表格默认条数"
+      },
+      "reportTitle": {
+        "label": "报表标题",
+        "placeholder": "请输入默认报表标题"
+      }
+    }
+  }
+}
