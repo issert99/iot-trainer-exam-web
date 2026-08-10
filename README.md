@@ -1,38 +1,32 @@
-# 物联网实训箱 · 考试系统 Web 端
+# 知测 · 考试系统 Web 端
 
-考试系统子系统的 Web 端项目。
+基于 [Vue Vben Admin](https://www.vben.pro/)（`apps/web-antd`）的考试管理前端。
 
 ## 技术栈
 
-- **Next.js 16**（App Router）
-- **React 19** + **TypeScript**
-- **Tailwind CSS 4**
-- 后续可接入：shadcn/ui、TanStack Query、Zustand
+- Vue 3 + Vite + TypeScript + Ant Design Vue
+- Vben 布局 / 主题 / 权限路由
 
 ## 开发
 
-要求 Node.js ≥ 20（推荐 22）。
-
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
-浏览器打开 [http://localhost:3000](http://localhost:3000)。
+默认地址：[http://localhost:5666](http://localhost:5666)
+
+`/api` 代理到 `http://127.0.0.1:3001/api`（见 `apps/web-antd/vite.config.mts`）。
 
 ## 脚本
 
-| 命令 | 说明 |
-| --- | --- |
-| `npm run dev` | 本地开发（Turbopack） |
-| `npm run build` | 生产构建 |
-| `npm run start` | 启动生产服务 |
-| `npm run lint` | ESLint 检查 |
+| 命令              | 说明     |
+| ----------------- | -------- |
+| `pnpm dev`        | 启动开发 |
+| `pnpm build:antd` | 生产构建 |
 
-## 环境变量
+## 目录
 
-复制 `.env.example` 为 `.env.local` 后按需修改：
-
-```bash
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
-```
+- 业务应用：`apps/web-antd`
+- 考试页面：`apps/web-antd/src/views/exam`
+- 路由：`apps/web-antd/src/router/routes/modules`
