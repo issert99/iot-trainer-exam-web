@@ -492,6 +492,9 @@ importers:
       '@changesets/cli':
         specifier: 'catalog:'
         version: 2.31.0(@types/node@25.9.1)
+      '@eslint-community/eslint-plugin-eslint-comments':
+        specifier: 'catalog:'
+        version: 4.7.1(eslint@10.4.0(jiti@2.7.0))
       '@tsdown/css':
         specifier: 'catalog:'
         version: 0.22.0(jiti@2.7.0)(postcss@8.5.15)(sass-embedded@1.99.0)(sass@1.99.0)(tsdown@0.22.0)(yaml@2.9.0)
@@ -540,6 +543,12 @@ importers:
       cspell:
         specifier: 'catalog:'
         version: 10.0.0
+      eslint-plugin-better-tailwindcss:
+        specifier: 'catalog:'
+        version: 4.5.0(eslint@10.4.0(jiti@2.7.0))(oxlint@1.66.0(oxlint-tsgolint@0.23.0))(tailwindcss@4.3.0)(typescript@6.0.3)
+      eslint-plugin-command:
+        specifier: 'catalog:'
+        version: 3.5.2(@typescript-eslint/rule-tester@8.59.4(eslint@10.4.0(jiti@2.7.0))(typescript@6.0.3))(@typescript-eslint/typescript-estree@8.59.4(typescript@6.0.3))(@typescript-eslint/utils@8.59.4(eslint@10.4.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.4.0(jiti@2.7.0))
       happy-dom:
         specifier: 'catalog:'
         version: 20.9.0

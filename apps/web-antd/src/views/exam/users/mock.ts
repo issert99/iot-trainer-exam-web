@@ -11,6 +11,7 @@ export type AdminUserRow = {
   username: string;
 };
 
+/** @deprecated 请使用 views/exam/org/mock 中的 AdminClassRow */
 export type AdminClassCard = {
   id: string;
   name: string;

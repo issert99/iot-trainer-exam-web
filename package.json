@@ -55,6 +55,7 @@
   "devDependencies": {
     "@changesets/changelog-github": "catalog:",
     "@changesets/cli": "catalog:",
+    "@eslint-community/eslint-plugin-eslint-comments": "catalog:",
     "@tsdown/css": "catalog:",
     "@types/node": "catalog:",
     "@vben/commitlint-config": "workspace:*",
@@ -71,6 +72,8 @@
     "@vitejs/plugin-vue-jsx": "catalog:",
     "cross-env": "catalog:",
     "cspell": "catalog:",
+    "eslint-plugin-better-tailwindcss": "catalog:",
+    "eslint-plugin-command": "catalog:",
     "happy-dom": "catalog:",
     "is-ci": "catalog:",
     "lefthook": "catalog:",
