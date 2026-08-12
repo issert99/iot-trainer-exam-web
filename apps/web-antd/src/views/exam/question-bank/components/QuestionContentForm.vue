@@ -1,9 +1,22 @@
 <script lang="ts" setup>
 import type { BuilderComponent } from '../mock';
 
-import { Form, Input, InputNumber, Select, Space } from 'ant-design-vue';
+import {
+  Button,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Space,
+  Tag,
+} from 'ant-design-vue';
 
 import { paletteMeta } from '../mock';
+import {
+  createEmptyTemplateDefinition,
+  createTemplateResponseComponent,
+  RESPONSE_OPTIONS,
+} from '../template-schema';
 
 defineOptions({ name: 'QuestionContentForm' });
 
@@ -27,6 +40,30 @@ function setLines(comp: BuilderComponent, key: string, text: string) {
     .split('\n')
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function setClozeOptions(comp: BuilderComponent, text: string) {
+  comp.config.options = String(text)
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((text, index) => ({
+      key: String.fromCodePoint(65 + index),
+      text,
+    }));
+}
+
+function addGroupChild(group: BuilderComponent) {
+  const allowed = group.config.allowedResponseTypes || ['choice'];
+  const responseType = group.config.newChildType || allowed[0];
+  const definition = createEmptyTemplateDefinition();
+  definition.responseTypes = [responseType];
+  const child = createTemplateResponseComponent(responseType, definition);
+  group.children = [...(group.children || []), child];
+}
+
+function removeGroupChild(group: BuilderComponent, id: string) {
+  group.children = (group.children || []).filter((item) => item.id !== id);
 }
 </script>
 
@@ -101,6 +138,61 @@ function setLines(comp: BuilderComponent, key: string, text: string) {
             />
           </Form.Item>
           <Form.Item label="分值">
+            <InputNumber v-model:value="comp.score" :min="0" />
+          </Form.Item>
+        </template>
+
+        <!-- 共享选项完形填空 -->
+        <template v-else-if="comp.type === 'cloze'">
+          <Form.Item label="文章内容">
+            <Input.TextArea
+              v-model:value="comp.config.passage"
+              :rows="8"
+              placeholder="输入文章，并用 [[1]]、[[2]]、[[3]] 标记空位"
+            />
+          </Form.Item>
+          <Form.Item label="空位数量">
+            <InputNumber
+              v-model:value="comp.config.blankCount"
+              :min="1"
+              :max="200"
+            />
+          </Form.Item>
+          <Form.Item label="共享选项（一行一个）">
+            <Input.TextArea
+              :value="
+                (comp.config.options || [])
+                  .map((item: any) => item.text)
+                  .join('\n')
+              "
+              :rows="8"
+              @update:value="(value) => setClozeOptions(comp, String(value))"
+            />
+          </Form.Item>
+          <Form.Item label="正确答案">
+            <Input
+              :value="(comp.config.answers || []).join(',')"
+              placeholder="按空位顺序填写选项编号，例如 A,C,B,D"
+              @update:value="
+                (value) =>
+                  (comp.config.answers = String(value)
+                    .split(/[,，\s]+/)
+                    .map((item) => item.trim())
+                    .filter(Boolean))
+              "
+            />
+          </Form.Item>
+          <Form.Item label="选项使用规则">
+            <Select
+              v-model:value="comp.config.reuse"
+              style="width: 220px"
+              :options="[
+                { label: '每个选项只能使用一次', value: 'once' },
+                { label: '允许重复使用', value: 'repeatable' },
+              ]"
+            />
+          </Form.Item>
+          <Form.Item label="总分">
             <InputNumber v-model:value="comp.score" :min="0" />
           </Form.Item>
         </template>
@@ -302,15 +394,50 @@ function setLines(comp: BuilderComponent, key: string, text: string) {
 
         <!-- 小题容器：递归渲染子题 -->
         <template v-else-if="comp.type === 'group'">
-          <div class="qb-group-tip">以下为该材料下的小题，请逐题填写：</div>
+          <div class="qb-group-tip">
+            以下为该材料下的小题。可以在模板允许的范围内继续添加小题：
+          </div>
+          <Space class="qb-group-actions">
+            <Select
+              v-model:value="comp.config.newChildType"
+              style="width: 220px"
+              :options="
+                RESPONSE_OPTIONS.filter((item) =>
+                  (comp.config.allowedResponseTypes || []).includes(item.value),
+                )
+              "
+              placeholder="选择新增小题的作答方式"
+            />
+            <Button
+              type="dashed"
+              :disabled="
+                (comp.children?.length || 0) >= Number(comp.config.max || 100)
+              "
+              @click="addGroupChild(comp)"
+            >
+              添加小题
+            </Button>
+          </Space>
           <div
             v-for="(child, ci) in comp.children || []"
             :key="child.id"
             class="qb-sub"
           >
             <div class="qb-sub-head">
-              小题 {{ ci + 1 }} ·
-              {{ paletteMeta(child.type as any)?.name || child.type }}
+              <span>
+                小题 {{ ci + 1 }} ·
+                {{ paletteMeta(child.type as any)?.name || child.type }}
+              </span>
+              <Button
+                size="small"
+                danger
+                :disabled="
+                  (comp.children?.length || 0) <= Number(comp.config.min || 0)
+                "
+                @click="removeGroupChild(comp, child.id)"
+              >
+                删除
+              </Button>
             </div>
             <!-- 复用同页逻辑：内联简化版 -->
             <template v-if="child.type === 'option_group'">
@@ -357,6 +484,42 @@ function setLines(comp: BuilderComponent, key: string, text: string) {
                 />
               </Form.Item>
               <Form.Item label="分值">
+                <InputNumber v-model:value="child.score" :min="0" />
+              </Form.Item>
+            </template>
+            <template v-else-if="child.type === 'cloze'">
+              <Form.Item label="文章内容">
+                <Input.TextArea
+                  v-model:value="child.config.passage"
+                  :rows="6"
+                  placeholder="用 [[1]]、[[2]] 标记空位"
+                />
+              </Form.Item>
+              <Form.Item label="共享选项（一行一个）">
+                <Input.TextArea
+                  :value="
+                    (child.config.options || [])
+                      .map((item: any) => item.text)
+                      .join('\n')
+                  "
+                  :rows="6"
+                  @update:value="
+                    (value) => setClozeOptions(child, String(value))
+                  "
+                />
+              </Form.Item>
+              <Form.Item label="正确答案">
+                <Input
+                  :value="(child.config.answers || []).join(',')"
+                  @update:value="
+                    (value) =>
+                      (child.config.answers = String(value)
+                        .split(/[,，\s]+/)
+                        .filter(Boolean))
+                  "
+                />
+              </Form.Item>
+              <Form.Item label="总分">
                 <InputNumber v-model:value="child.score" :min="0" />
               </Form.Item>
             </template>
@@ -461,6 +624,10 @@ function setLines(comp: BuilderComponent, key: string, text: string) {
   color: hsl(var(--muted-foreground));
 }
 
+.qb-group-actions {
+  margin-bottom: 12px;
+}
+
 .qb-sub {
   padding: 12px;
   margin-bottom: 10px;
@@ -470,6 +637,9 @@ function setLines(comp: BuilderComponent, key: string, text: string) {
 }
 
 .qb-sub-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 8px;
   font-size: 13px;
   font-weight: 600;

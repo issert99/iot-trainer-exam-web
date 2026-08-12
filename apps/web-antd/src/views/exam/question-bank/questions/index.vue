@@ -26,6 +26,7 @@ import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import {
   createQbQuestionApi,
   deleteQbQuestionApi,
+  getOrgOptionsApi,
   getQbQuestionApi,
   listQbCoursesApi,
   listQbQuestionsApi,
@@ -35,6 +36,11 @@ import {
 
 import QuestionBuilder from '../components/QuestionBuilder.vue';
 import QuestionPreview from '../components/QuestionPreview.vue';
+import {
+  decodeTemplateDefinition,
+  materializeTemplate,
+  parseTemplateScope,
+} from '../template-schema';
 
 defineOptions({ name: 'QuestionList' });
 
@@ -53,7 +59,9 @@ const previewOpen = ref(false);
 const previewTitle = ref('');
 const previewComponents = ref<BuilderComponent[]>([]);
 const courseOptions = ref<Array<{ label: string; value: string }>>([]);
+const courses = ref<QbCourseOption[]>([]);
 const templateOptions = ref<QbTemplate[]>([]);
+const majorCollegeMap = ref<Record<string, string>>({});
 
 const form = reactive({
   id: '',
@@ -62,6 +70,21 @@ const form = reactive({
   courseId: undefined as string | undefined,
   title: '',
   components: [] as BuilderComponent[],
+});
+
+const availableTemplates = computed(() => {
+  const course = courses.value.find((item) => item.id === form.courseId);
+  if (!course) return templateOptions.value;
+  const collegeId = majorCollegeMap.value[course.major_id];
+  return templateOptions.value.filter((item) => {
+    const scope = parseTemplateScope(item.scope);
+    return (
+      scope.type === 'public' ||
+      (scope.type === 'major' && scope.id === course.major_id) ||
+      (scope.type === 'college' && scope.id === collegeId) ||
+      item.id === form.templateId
+    );
+  });
 });
 
 const formOptions: VbenFormProps = {
@@ -161,15 +184,20 @@ const [Grid, gridApi] = useVbenVxeGrid({
 
 async function loadMeta() {
   try {
-    const [courses, templatesPage] = await Promise.all([
+    const [courseRows, templatesPage, orgOptions] = await Promise.all([
       listQbCoursesApi(),
       listQbTemplatesApi({ page: 1, pageSize: 200 }),
+      getOrgOptionsApi(),
     ]);
-    courseOptions.value = (courses || []).map((item: QbCourseOption) => ({
+    courses.value = courseRows || [];
+    courseOptions.value = courses.value.map((item: QbCourseOption) => ({
       label: `${item.name}（${item.major_name}）`,
       value: item.id,
     }));
     templateOptions.value = templatesPage.items || [];
+    majorCollegeMap.value = Object.fromEntries(
+      orgOptions.majors.map((item) => [item.id, item.college_id]),
+    );
   } catch {
     message.error('课程/模板选项加载失败');
   }
@@ -178,8 +206,8 @@ async function loadMeta() {
 async function openCreate() {
   form.id = '';
   form.mode = 'template';
-  form.templateId = templateOptions.value[0]?.id;
   form.courseId = courseOptions.value[0]?.value;
+  form.templateId = availableTemplates.value[0]?.id;
   form.title = '';
   form.components = [];
   selectedId.value = undefined;
@@ -204,7 +232,9 @@ function applyTemplate() {
   if (form.mode !== 'template' || !form.templateId) return;
   const tpl = templateOptions.value.find((item) => item.id === form.templateId);
   if (!tpl) return;
-  form.components = cloneComponents(tpl.components);
+  form.components = materializeTemplate(
+    decodeTemplateDefinition(tpl.components),
+  );
   selectedId.value = form.components[0]?.id;
   if (!form.title.trim()) form.title = tpl.name;
 }
@@ -217,7 +247,18 @@ function onModeChange() {
       selectedId.value = undefined;
     }
   } else {
-    if (!form.templateId) form.templateId = templateOptions.value[0]?.id;
+    if (!form.templateId) form.templateId = availableTemplates.value[0]?.id;
+    applyTemplate();
+  }
+}
+
+function onCourseChange() {
+  if (form.mode !== 'template') return;
+  const stillAvailable = availableTemplates.value.some(
+    (item) => item.id === form.templateId,
+  );
+  if (!stillAvailable) {
+    form.templateId = availableTemplates.value[0]?.id;
     applyTemplate();
   }
 }
@@ -382,8 +423,11 @@ onMounted(async () => {
               v-model:value="form.templateId"
               class="max-w-md"
               :options="
-                templateOptions.map((t) => ({
-                  label: t.name,
+                availableTemplates.map((t) => ({
+                  label:
+                    parseTemplateScope(t.scope).type === 'public'
+                      ? `公用 · ${t.name}`
+                      : `专业 · ${t.name}`,
                   value: t.id,
                 }))
               "
@@ -397,6 +441,7 @@ onMounted(async () => {
               :options="courseOptions"
               show-search
               option-filter-prop="label"
+              @change="onCourseChange"
             />
           </Form.Item>
           <Form.Item label="题目标题" required>

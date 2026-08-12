@@ -3,7 +3,7 @@ import type { BuilderComponent } from '../mock';
 
 import { computed, reactive, watch } from 'vue';
 
-import { Button, Checkbox, Input, Radio, Upload } from 'ant-design-vue';
+import { Button, Checkbox, Input, Radio, Select, Upload } from 'ant-design-vue';
 
 import CodeEditorBlock from './CodeEditorBlock.vue';
 import MatchingConnect from './MatchingConnect.vue';
@@ -26,6 +26,14 @@ watch(
         switch (node.type) {
           case 'canvas': {
             answers[node.id] = [];
+
+            break;
+          }
+          case 'cloze': {
+            answers[node.id] = Array.from(
+              { length: Number(node.config.blankCount || 1) },
+              () => undefined,
+            );
 
             break;
           }
@@ -81,6 +89,15 @@ function moveSort(id: string, index: number, dir: -1 | 1) {
   list[index] = list[j];
   list[j] = t;
   answers[id] = list;
+}
+
+function clozeParts(text: string) {
+  return String(text || '').split(/(\[\[\d+\]\])/g);
+}
+
+function clozeIndex(part: string) {
+  const match = part.match(/\[\[(\d+)\]\]/);
+  return match ? Number(match[1]) - 1 : -1;
 }
 </script>
 
@@ -143,6 +160,39 @@ function moveSort(id: string, index: number, dir: -1 | 1) {
               </Checkbox>
             </div>
           </Checkbox.Group>
+        </section>
+
+        <section v-else-if="comp.type === 'cloze'" class="qb-section">
+          <div class="qb-cloze-passage">
+            <template
+              v-for="(part, partIndex) in clozeParts(comp.config.passage)"
+              :key="`${comp.id}-${partIndex}`"
+            >
+              <Select
+                v-if="clozeIndex(part) >= 0"
+                v-model:value="answers[comp.id][clozeIndex(part)]"
+                class="qb-cloze-select"
+                size="small"
+                :placeholder="String(clozeIndex(part) + 1)"
+                :options="
+                  (comp.config.options || []).map((item: any) => ({
+                    label: `${item.key}. ${item.text}`,
+                    value: item.key,
+                  }))
+                "
+              />
+              <span v-else>{{ part }}</span>
+            </template>
+          </div>
+          <div class="qb-cloze-pool">
+            <span
+              v-for="item in comp.config.options || []"
+              :key="item.key"
+              class="qb-cloze-option"
+            >
+              {{ item.key }}. {{ item.text }}
+            </span>
+          </div>
         </section>
 
         <section v-else-if="comp.type === 'text_input'" class="qb-section">
@@ -335,6 +385,27 @@ function moveSort(id: string, index: number, dir: -1 | 1) {
                 :rows="3"
                 :placeholder="child.config.placeholder || '请输入'"
               />
+              <div v-else-if="child.type === 'cloze'" class="qb-cloze-passage">
+                <template
+                  v-for="(part, partIndex) in clozeParts(child.config.passage)"
+                  :key="`${child.id}-${partIndex}`"
+                >
+                  <Select
+                    v-if="clozeIndex(part) >= 0"
+                    v-model:value="answers[child.id][clozeIndex(part)]"
+                    class="qb-cloze-select"
+                    size="small"
+                    :placeholder="String(clozeIndex(part) + 1)"
+                    :options="
+                      (child.config.options || []).map((item: any) => ({
+                        label: `${item.key}. ${item.text}`,
+                        value: item.key,
+                      }))
+                    "
+                  />
+                  <span v-else>{{ part }}</span>
+                </template>
+              </div>
               <CodeEditorBlock
                 v-else-if="child.type === 'code_editor'"
                 v-model="answers[child.id]"
@@ -435,6 +506,32 @@ function moveSort(id: string, index: number, dir: -1 | 1) {
 
 .qb-option {
   padding: 4px 0;
+}
+
+.qb-cloze-passage {
+  font-size: 15px;
+  line-height: 2.4;
+  white-space: pre-wrap;
+}
+
+.qb-cloze-select {
+  min-width: 130px;
+  margin: 0 4px;
+}
+
+.qb-cloze-pool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 12px;
+  margin-top: 14px;
+  background: hsl(var(--muted) / 30%);
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+}
+
+.qb-cloze-option {
+  font-size: 13px;
 }
 
 .qb-media {

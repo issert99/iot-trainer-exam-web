@@ -3,6 +3,7 @@
 export type ComponentType =
   | 'audio_record'
   | 'canvas'
+  | 'cloze'
   | 'code_editor'
   | 'file_upload'
   | 'formula'
@@ -14,6 +15,7 @@ export type ComponentType =
   | 'rich_stem'
   | 'sorting'
   | 'table_fill'
+  | 'template_definition'
   | 'text_input';
 
 export type ComponentCategory = 'answer' | 'media' | 'stem' | 'structure';
@@ -140,6 +142,28 @@ export const COMPONENT_PALETTE: PaletteItem[] = [
       mode: 'short',
       placeholder: '请输入答案',
       maxLength: 500,
+    }),
+  },
+  {
+    type: 'cloze',
+    name: '共享选项填空',
+    hint: '文章内多个空共用一组选项，可设置干扰项和重复规则',
+    icon: 'lucide:panel-top-dashed',
+    category: 'answer',
+    defaultLabel: '共享选项填空',
+    defaultScore: 10,
+    defaultJudgeMode: 'auto',
+    defaultConfig: () => ({
+      passage: '在这里输入文章，并使用 [[1]]、[[2]] 标记空位。',
+      blankCount: 10,
+      options: Array.from({ length: 10 }, (_, index) => ({
+        key: String.fromCodePoint(65 + index),
+        text: `选项 ${String.fromCodePoint(65 + index)}`,
+      })),
+      answers: [],
+      reuse: 'once',
+      allowDistractors: true,
+      scoreStrategy: 'partial',
     }),
   },
   {

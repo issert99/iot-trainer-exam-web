@@ -109,6 +109,18 @@ function addOption() {
   selected.value.config.options = options;
 }
 
+function setClozeOptions(text: string) {
+  if (!selected.value || selected.value.type !== 'cloze') return;
+  selected.value.config.options = String(text)
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item, index) => ({
+      key: String.fromCodePoint(65 + index),
+      text: item,
+    }));
+}
+
 function flatRows(
   list: BuilderComponent[],
   depth = 0,
@@ -335,6 +347,46 @@ const selectedRows = computed(() => flatRows(components.value));
               </Form.Item>
               <Form.Item label="占位提示">
                 <Input v-model:value="selected.config.placeholder" />
+              </Form.Item>
+            </template>
+
+            <template v-else-if="selected.type === 'cloze'">
+              <Form.Item label="文章内容">
+                <Input.TextArea
+                  v-model:value="selected.config.passage"
+                  :rows="6"
+                  placeholder="使用 [[1]]、[[2]] 标记空位"
+                />
+              </Form.Item>
+              <Form.Item label="空位数量">
+                <InputNumber
+                  v-model:value="selected.config.blankCount"
+                  :min="1"
+                  :max="200"
+                  class="w-full"
+                />
+              </Form.Item>
+              <Form.Item label="共享选项（一行一个）">
+                <Input.TextArea
+                  :value="
+                    (selected.config.options || [])
+                      .map((item: any) => item.text)
+                      .join('\n')
+                  "
+                  :rows="6"
+                  @update:value="(value) => setClozeOptions(String(value))"
+                />
+              </Form.Item>
+              <Form.Item label="正确答案（按空位顺序）">
+                <Input
+                  :value="(selected.config.answers || []).join(',')"
+                  @update:value="
+                    (value) =>
+                      (selected!.config.answers = String(value)
+                        .split(/[,，\s]+/)
+                        .filter(Boolean))
+                  "
+                />
               </Form.Item>
             </template>
 
