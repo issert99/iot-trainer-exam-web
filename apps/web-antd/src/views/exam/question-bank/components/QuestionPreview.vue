@@ -3,9 +3,19 @@ import type { BuilderComponent } from '../mock';
 
 import { computed, reactive, watch } from 'vue';
 
-import { Button, Checkbox, Input, Radio, Select, Upload } from 'ant-design-vue';
+import {
+  Button,
+  Checkbox,
+  Input,
+  InputNumber,
+  Radio,
+  Select,
+  Upload,
+} from 'ant-design-vue';
 
 import CodeEditorBlock from './CodeEditorBlock.vue';
+import DrawingAnswer from './DrawingAnswer.vue';
+import FormulaEditor from './FormulaEditor.vue';
 import MatchingConnect from './MatchingConnect.vue';
 import TopologyCanvas from './TopologyCanvas.vue';
 
@@ -25,14 +35,17 @@ watch(
       for (const node of nodes || []) {
         switch (node.type) {
           case 'canvas': {
-            answers[node.id] = [];
+            answers[node.id] = node.config.mode === 'draw' ? '' : [];
 
             break;
           }
           case 'cloze': {
             answers[node.id] = Array.from(
               { length: Number(node.config.blankCount || 1) },
-              () => undefined,
+              (_, index) =>
+                clozeBlankType(node.config, index) === 'multi_choice'
+                  ? []
+                  : undefined,
             );
 
             break;
@@ -98,6 +111,61 @@ function clozeParts(text: string) {
 function clozeIndex(part: string) {
   const match = part.match(/\[\[(\d+)\]\]/);
   return match ? Number(match[1]) - 1 : -1;
+}
+
+function clozeBlank(config: BuilderComponent['config'], index: number) {
+  return Array.isArray(config.blanks) ? config.blanks[index] || {} : {};
+}
+
+function clozeBlankType(config: BuilderComponent['config'], index: number) {
+  return clozeBlank(config, index).type || config.blankType || 'shared_options';
+}
+
+function clozeOptionItems(
+  config: BuilderComponent['config'],
+  index: number,
+  answerValues: unknown[] = [],
+) {
+  const blank = clozeBlank(config, index);
+  if (clozeBlankType(config, index) === 'true_false') {
+    return [
+      { label: '正确', value: 'true' },
+      { label: '错误', value: 'false' },
+    ];
+  }
+  let options = ['A', 'B', 'C', 'D'].map((key) => ({
+    key,
+    text: `选项 ${key}`,
+  }));
+  if (Array.isArray(config.options) && config.options.length > 0) {
+    options = config.options;
+  }
+  if (Array.isArray(blank.options) && blank.options.length > 0) {
+    options = blank.options;
+  }
+  const selectedElsewhere = new Set(
+    answerValues
+      .filter((_, answerIndex) => answerIndex !== index)
+      .flatMap((value) => (Array.isArray(value) ? value : [value]))
+      .filter(Boolean),
+  );
+  return options.map((item: { key: string; text: string }) => ({
+    label: `${item.key}. ${item.text}`,
+    value: item.key,
+    disabled:
+      config.reuse === 'once' &&
+      clozeBlankType(config, index) === 'shared_options' &&
+      selectedElsewhere.has(item.key),
+  }));
+}
+
+function clozeUsesSharedOptions(config: BuilderComponent['config']) {
+  return (
+    config.blankType === 'shared_options' ||
+    (config.blanks || []).some(
+      (blank: Record<string, any>) => blank.type === 'shared_options',
+    )
+  );
 }
 </script>
 
@@ -169,22 +237,73 @@ function clozeIndex(part: string) {
               :key="`${comp.id}-${partIndex}`"
             >
               <Select
-                v-if="clozeIndex(part) >= 0"
+                v-if="
+                  clozeIndex(part) >= 0 &&
+                  ['choice', 'shared_options', 'true_false'].includes(
+                    clozeBlankType(comp.config, clozeIndex(part)),
+                  )
+                "
                 v-model:value="answers[comp.id][clozeIndex(part)]"
                 class="qb-cloze-select"
                 size="small"
                 :placeholder="String(clozeIndex(part) + 1)"
                 :options="
-                  (comp.config.options || []).map((item: any) => ({
-                    label: `${item.key}. ${item.text}`,
-                    value: item.key,
-                  }))
+                  clozeOptionItems(
+                    comp.config,
+                    clozeIndex(part),
+                    answers[comp.id],
+                  )
                 "
+              />
+              <Select
+                v-else-if="
+                  clozeIndex(part) >= 0 &&
+                  clozeBlankType(comp.config, clozeIndex(part)) ===
+                    'multi_choice'
+                "
+                v-model:value="answers[comp.id][clozeIndex(part)]"
+                class="qb-cloze-multi"
+                mode="multiple"
+                size="small"
+                placeholder="多选"
+                :options="
+                  clozeOptionItems(
+                    comp.config,
+                    clozeIndex(part),
+                    answers[comp.id],
+                  )
+                "
+              />
+              <FormulaEditor
+                v-else-if="
+                  clozeIndex(part) >= 0 &&
+                  clozeBlankType(comp.config, clozeIndex(part)) === 'formula'
+                "
+                v-model="answers[comp.id][clozeIndex(part)]"
+                compact
+                placeholder="输入公式"
+              />
+              <InputNumber
+                v-else-if="
+                  clozeIndex(part) >= 0 &&
+                  clozeBlankType(comp.config, clozeIndex(part)) === 'number'
+                "
+                v-model:value="answers[comp.id][clozeIndex(part)]"
+                class="qb-cloze-input"
+                size="small"
+                placeholder="输入数值"
+              />
+              <Input
+                v-else-if="clozeIndex(part) >= 0"
+                v-model:value="answers[comp.id][clozeIndex(part)]"
+                class="qb-cloze-input"
+                size="small"
+                placeholder="输入答案"
               />
               <span v-else>{{ part }}</span>
             </template>
           </div>
-          <div class="qb-cloze-pool">
+          <div v-if="clozeUsesSharedOptions(comp.config)" class="qb-cloze-pool">
             <span
               v-for="item in comp.config.options || []"
               :key="item.key"
@@ -243,7 +362,13 @@ function clozeIndex(part: string) {
         </section>
 
         <section v-else-if="comp.type === 'canvas'" class="qb-section">
+          <DrawingAnswer
+            v-if="comp.config.mode === 'draw'"
+            v-model="answers[comp.id]"
+            :prompt="comp.config.prompt"
+          />
           <TopologyCanvas
+            v-else
             v-model="answers[comp.id]"
             :mode="comp.config.mode"
             :background-image="comp.config.backgroundImage"
@@ -253,8 +378,8 @@ function clozeIndex(part: string) {
         </section>
 
         <section v-else-if="comp.type === 'formula'" class="qb-section">
-          <Input
-            v-model:value="answers[comp.id]"
+          <FormulaEditor
+            v-model="answers[comp.id]"
             :placeholder="comp.config.placeholder || '输入公式'"
           />
         </section>
@@ -367,7 +492,9 @@ function clozeIndex(part: string) {
                 {{ child.config.prompt }}
               </div>
               <Radio.Group
-                v-if="child.type === 'option_group'"
+                v-if="
+                  child.type === 'option_group' && child.config.mode !== 'multi'
+                "
                 v-model:value="answers[child.id]"
                 class="qb-options"
               >
@@ -379,6 +506,23 @@ function clozeIndex(part: string) {
                   <Radio :value="opt.key">{{ opt.key }}. {{ opt.text }}</Radio>
                 </div>
               </Radio.Group>
+              <Checkbox.Group
+                v-else-if="
+                  child.type === 'option_group' && child.config.mode === 'multi'
+                "
+                v-model:value="answers[child.id]"
+                class="qb-options"
+              >
+                <div
+                  v-for="opt in child.config.options || []"
+                  :key="opt.key"
+                  class="qb-option"
+                >
+                  <Checkbox :value="opt.key">
+                    {{ opt.key }}. {{ opt.text }}
+                  </Checkbox>
+                </div>
+              </Checkbox.Group>
               <Input.TextArea
                 v-else-if="child.type === 'text_input'"
                 v-model:value="answers[child.id]"
@@ -420,12 +564,61 @@ function clozeIndex(part: string) {
                 :right="child.config.right"
               />
               <TopologyCanvas
-                v-else-if="child.type === 'canvas'"
+                v-else-if="
+                  child.type === 'canvas' && child.config.mode !== 'draw'
+                "
                 v-model="answers[child.id]"
                 :mode="child.config.mode"
                 :background-image="child.config.backgroundImage"
                 :nodes="child.config.nodes"
               />
+              <DrawingAnswer
+                v-else-if="child.type === 'canvas'"
+                v-model="answers[child.id]"
+                :prompt="child.config.prompt"
+              />
+              <FormulaEditor
+                v-else-if="child.type === 'formula'"
+                v-model="answers[child.id]"
+                :placeholder="child.config.placeholder || '输入公式'"
+              />
+              <table v-else-if="child.type === 'table_fill'" class="qb-table">
+                <thead>
+                  <tr>
+                    <th
+                      v-for="(header, headerIndex) in child.config.headers ||
+                      []"
+                      :key="headerIndex"
+                    >
+                      {{ header }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in child.config.rows || 3" :key="row">
+                    <td v-for="column in child.config.cols || 3" :key="column">
+                      <Input size="small" placeholder="填写" />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <Upload
+                v-else-if="child.type === 'file_upload'"
+                :show-upload-list="false"
+              >
+                <Button>
+                  上传文件（{{ child.config.accept || '多格式' }}）
+                </Button>
+              </Upload>
+              <Button v-else-if="child.type === 'audio_record'" type="primary">
+                开始录音（最长 {{ child.config.maxSeconds || 120 }} 秒）
+              </Button>
+              <div
+                v-else-if="child.type === 'image_hotspot'"
+                class="qb-media qb-muted"
+              >
+                图片热点 / 标注作答区域
+              </div>
               <div v-else class="qb-muted">请完成作答</div>
             </div>
           </div>
@@ -514,8 +707,19 @@ function clozeIndex(part: string) {
   white-space: pre-wrap;
 }
 
+.qb-cloze-input,
 .qb-cloze-select {
+  width: 150px;
   min-width: 130px;
+  margin: 0 4px;
+}
+
+.qb-cloze-passage :deep(.qb-formula-editor) {
+  margin: 0 4px;
+}
+
+.qb-cloze-multi {
+  width: 220px;
   margin: 0 4px;
 }
 

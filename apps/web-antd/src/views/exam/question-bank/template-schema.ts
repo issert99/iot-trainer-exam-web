@@ -4,12 +4,11 @@ import { uid } from './mock';
 
 export type TemplateScopeType = 'college' | 'major' | 'public';
 export type TemplateStructure =
+  | 'group'
   | 'inline'
   | 'single'
   | 'steps'
-  | 'stimulus'
-  | 'submission'
-  | 'visual';
+  | 'stimulus';
 
 export type TemplateContentType =
   | 'audio'
@@ -71,6 +70,10 @@ export type TemplateDefinition = {
     | 'music'
     | 'simulation'
   >;
+  responseSelection: {
+    fixedType: TemplateResponseType;
+    mode: 'fixed' | 'selectable';
+  };
   responseTypes: TemplateResponseType[];
   stimulus: {
     allowedContent: TemplateContentType[];
@@ -79,7 +82,9 @@ export type TemplateDefinition = {
   };
   structure: TemplateStructure;
   subQuestions: {
+    countMode: 'fixed' | 'range';
     enabled: boolean;
+    fixedCount: number;
     max: number;
     min: number;
     repeatable: boolean;
@@ -96,11 +101,10 @@ export type StoredTemplateDefinition = BuilderComponent & {
 
 export const STRUCTURE_OPTIONS = [
   { label: '普通单题', value: 'single' },
+  { label: '题组 / 批量小题', value: 'group' },
   { label: '题干内多空', value: 'inline' },
   { label: '共享材料 + 多小题', value: 'stimulus' },
   { label: '分步骤综合题', value: 'steps' },
-  { label: '图形与操作题', value: 'visual' },
-  { label: '作品与实践考核', value: 'submission' },
 ];
 
 export const RESPONSE_OPTIONS: Array<{
@@ -157,10 +161,16 @@ export function createEmptyTemplateDefinition(): TemplateDefinition {
       allowedContent: ['text', 'image'],
     },
     subQuestions: {
+      countMode: 'range',
       enabled: false,
+      fixedCount: 1,
       repeatable: false,
       min: 0,
       max: 1,
+    },
+    responseSelection: {
+      mode: 'fixed',
+      fixedType: 'choice',
     },
     responseTypes: ['choice'],
     inlineAnswers: {
@@ -218,13 +228,83 @@ export function decodeTemplateDefinition(raw: unknown): TemplateDefinition {
       (item as BuilderComponent).type === 'template_definition',
   ) as StoredTemplateDefinition | undefined;
   if (stored?.config?.definition?.version === 1) {
-    // Keep this compatible with reactive values passed by form models.
-    // eslint-disable-next-line unicorn/prefer-structured-clone
-    return JSON.parse(
-      JSON.stringify(stored.config.definition),
-    ) as TemplateDefinition;
+    return normalizeStoredDefinition(stored.config.definition);
   }
   return inferLegacyDefinition(list as BuilderComponent[]);
+}
+
+function normalizeStoredDefinition(
+  raw: TemplateDefinition,
+): TemplateDefinition {
+  const defaults = createEmptyTemplateDefinition();
+  // Keep this compatible with reactive values passed by form models.
+  // eslint-disable-next-line unicorn/prefer-structured-clone
+  const source = JSON.parse(JSON.stringify(raw)) as Partial<TemplateDefinition>;
+  const sourceSubQuestions = source.subQuestions as
+    | Partial<TemplateDefinition['subQuestions']>
+    | undefined;
+  const responseTypes =
+    source.responseTypes && source.responseTypes.length > 0
+      ? source.responseTypes
+      : defaults.responseTypes;
+  const legacyStructure = String(source.structure || 'single');
+  const structure: TemplateStructure =
+    legacyStructure === 'visual' || legacyStructure === 'submission'
+      ? 'single'
+      : (legacyStructure as TemplateStructure);
+  if (legacyStructure === 'visual' && !responseTypes.includes('drawing')) {
+    responseTypes.push('drawing');
+  }
+  if (legacyStructure === 'submission' && !responseTypes.includes('file')) {
+    responseTypes.push('file');
+  }
+  const repeatable =
+    sourceSubQuestions?.repeatable ?? defaults.subQuestions.repeatable;
+  const min = sourceSubQuestions?.min ?? defaults.subQuestions.min;
+  const max = sourceSubQuestions?.max ?? defaults.subQuestions.max;
+  const countMode =
+    sourceSubQuestions?.countMode || (repeatable ? 'range' : 'fixed');
+  const fixedCount =
+    sourceSubQuestions?.fixedCount || Math.max(1, min === max ? min : min || 1);
+  return {
+    ...defaults,
+    ...source,
+    structure,
+    responseTypes,
+    responseSelection: source.responseSelection || {
+      mode: responseTypes.length === 1 ? 'fixed' : 'selectable',
+      fixedType: responseTypes[0] || 'choice',
+    },
+    stimulus: {
+      ...defaults.stimulus,
+      ...source.stimulus,
+    },
+    subQuestions: {
+      ...defaults.subQuestions,
+      ...sourceSubQuestions,
+      countMode,
+      fixedCount,
+      min,
+      max,
+      repeatable,
+    },
+    inlineAnswers: {
+      ...defaults.inlineAnswers,
+      ...source.inlineAnswers,
+    },
+    optionPool: {
+      ...defaults.optionPool,
+      ...source.optionPool,
+    },
+    dependencies: {
+      ...defaults.dependencies,
+      ...source.dependencies,
+    },
+    defaultScoring: {
+      ...defaults.defaultScoring,
+      ...source.defaultScoring,
+    },
+  };
 }
 
 function inferLegacyDefinition(
@@ -238,6 +318,8 @@ function inferLegacyDefinition(
   definition.stimulus.enabled = hasGroup || hasMedia;
   definition.stimulus.required = hasGroup;
   definition.subQuestions.enabled = hasGroup;
+  definition.subQuestions.countMode = hasGroup ? 'range' : 'fixed';
+  definition.subQuestions.fixedCount = hasGroup ? 1 : 0;
   definition.subQuestions.repeatable = hasGroup;
   definition.subQuestions.min = hasGroup ? 1 : 0;
   definition.subQuestions.max = hasGroup ? 50 : 1;
@@ -251,6 +333,10 @@ function inferLegacyDefinition(
   if (definition.responseTypes.length === 0) {
     definition.responseTypes = ['choice'];
   }
+  definition.responseSelection = {
+    mode: definition.responseTypes.length === 1 ? 'fixed' : 'selectable',
+    fixedType: definition.responseTypes[0] || 'choice',
+  };
   return definition;
 }
 
@@ -302,10 +388,45 @@ export function parseTemplateScope(scope?: string): {
   };
 }
 
+function createInlineBlank(type: TemplateResponseType, index: number) {
+  return {
+    marker: index + 1,
+    type,
+    answer: '',
+    options: ['choice', 'multi_choice'].includes(type)
+      ? defaultOptions()
+      : undefined,
+  };
+}
+
 export function materializeTemplate(
   definition: TemplateDefinition,
 ): BuilderComponent[] {
   const result: BuilderComponent[] = [];
+  const responseType =
+    definition.responseSelection.mode === 'fixed'
+      ? definition.responseSelection.fixedType
+      : definition.responseTypes[0] || 'text_long';
+  if (definition.structure === 'inline') {
+    const inlineResponse = createTemplateResponseComponent(
+      'shared_options',
+      definition,
+    );
+    inlineResponse.config.blankType = responseType;
+    inlineResponse.config.blankTypeMode =
+      definition.responseSelection.mode === 'fixed' ? 'uniform' : 'per_blank';
+    inlineResponse.config.allowedBlankTypes =
+      definition.responseSelection.mode === 'fixed'
+        ? [definition.responseSelection.fixedType]
+        : [...definition.responseTypes];
+    inlineResponse.config.blanks = Array.from(
+      { length: inlineResponse.config.blankCount },
+      (_, index) => createInlineBlank(responseType, index),
+    );
+    result.push(inlineResponse);
+    return result;
+  }
+
   if (definition.stimulus.enabled) {
     result.push({
       id: uid('cmp'),
@@ -350,14 +471,36 @@ export function materializeTemplate(
     });
   }
 
-  if (definition.structure === 'inline' || definition.inlineAnswers.enabled) {
-    result.push(createTemplateResponseComponent('shared_options', definition));
+  if (definition.inlineAnswers.enabled) {
+    const inlineResponse = createTemplateResponseComponent(
+      'shared_options',
+      definition,
+    );
+    inlineResponse.config.blankType = responseType;
+    inlineResponse.config.blankTypeMode =
+      definition.responseSelection.mode === 'fixed' ? 'uniform' : 'per_blank';
+    inlineResponse.config.allowedBlankTypes =
+      definition.responseSelection.mode === 'fixed'
+        ? [definition.responseSelection.fixedType]
+        : [...definition.responseTypes];
+    inlineResponse.config.blanks = Array.from(
+      { length: inlineResponse.config.blankCount },
+      (_, index) => createInlineBlank(responseType, index),
+    );
+    result.push(inlineResponse);
     return result;
   }
 
-  const responseType = definition.responseTypes[0] || 'text_long';
-  const response = createTemplateResponseComponent(responseType, definition);
   if (definition.subQuestions.enabled) {
+    const fixedCount = Math.max(1, definition.subQuestions.fixedCount);
+    const isFixed = definition.subQuestions.countMode === 'fixed';
+    const initialCount = isFixed
+      ? fixedCount
+      : Math.max(1, definition.subQuestions.min);
+    const allowedResponseTypes =
+      definition.responseSelection.mode === 'fixed'
+        ? [definition.responseSelection.fixedType]
+        : [...definition.responseTypes];
     result.push({
       id: uid('cmp'),
       type: 'group',
@@ -366,15 +509,19 @@ export function materializeTemplate(
       judgeMode: 'none',
       config: {
         sharedStem: true,
-        repeatable: definition.subQuestions.repeatable,
-        min: definition.subQuestions.min,
-        max: definition.subQuestions.max,
-        allowedResponseTypes: [...definition.responseTypes],
+        countMode: definition.subQuestions.countMode,
+        repeatable: !isFixed && definition.subQuestions.repeatable,
+        min: isFixed ? fixedCount : definition.subQuestions.min,
+        max: isFixed ? fixedCount : definition.subQuestions.max,
+        fixedCount: isFixed ? fixedCount : undefined,
+        allowedResponseTypes,
       },
-      children: [response],
+      children: Array.from({ length: initialCount }, () =>
+        createTemplateResponseComponent(responseType, definition),
+      ),
     });
   } else {
-    result.push(response);
+    result.push(createTemplateResponseComponent(responseType, definition));
   }
   return result;
 }
@@ -395,8 +542,15 @@ export function createTemplateResponseComponent(
       label: '共享选项填空',
       config: {
         passage: '',
+        blankType: 'shared_options',
         blankCount: Math.max(1, definition.inlineAnswers.maxBlanks || 10),
-        options: [],
+        options: Array.from(
+          { length: Math.max(1, definition.optionPool.minOptions) },
+          (_, index) => ({
+            key: String.fromCodePoint(65 + index),
+            text: `词库选项 ${String.fromCodePoint(65 + index)}`,
+          }),
+        ),
         answers: [],
         reuse: definition.optionPool.reuse,
         allowDistractors: definition.optionPool.allowDistractors,

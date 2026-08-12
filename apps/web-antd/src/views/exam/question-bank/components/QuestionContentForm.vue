@@ -20,6 +20,16 @@ import {
 
 defineOptions({ name: 'QuestionContentForm' });
 
+const INLINE_RESPONSE_TYPES = new Set([
+  'choice',
+  'formula',
+  'multi_choice',
+  'number',
+  'shared_options',
+  'text_short',
+  'true_false',
+]);
+
 const components = defineModel<BuilderComponent[]>('components', {
   required: true,
 });
@@ -53,7 +63,144 @@ function setClozeOptions(comp: BuilderComponent, text: string) {
     }));
 }
 
+function inlineResponseOptions(comp: BuilderComponent) {
+  const allowed = Array.isArray(comp.config.allowedBlankTypes)
+    ? comp.config.allowedBlankTypes
+    : [];
+  return RESPONSE_OPTIONS.filter(
+    (item) =>
+      INLINE_RESPONSE_TYPES.has(item.value) &&
+      (allowed.length === 0 || allowed.includes(item.value)),
+  );
+}
+
+function inlineResponseLabel(type: string) {
+  const labels: Record<string, string> = {
+    choice: '独立四选一',
+    formula: '公式',
+    multi_choice: '独立多选',
+    number: '数值',
+    shared_options: '共享词库',
+    text_short: '文本',
+    true_false: '判断',
+  };
+  return labels[type] || type;
+}
+
+function setClozeBlankType(comp: BuilderComponent, value: unknown) {
+  comp.config.blankType = String(value);
+  if (comp.config.blankTypeMode !== 'per_blank') {
+    comp.config.blanks = (comp.config.blanks || []).map((blank: any) => ({
+      ...blank,
+      type: comp.config.blankType,
+    }));
+  }
+  if (
+    ['choice', 'multi_choice', 'shared_options'].includes(
+      comp.config.blankType,
+    ) &&
+    (!Array.isArray(comp.config.options) || comp.config.options.length === 0)
+  ) {
+    comp.config.options = ['A', 'B', 'C', 'D'].map((key) => ({
+      key,
+      text: `选项 ${key}`,
+    }));
+  }
+}
+
+function setClozeBlankCount(comp: BuilderComponent, value: unknown) {
+  const count = Math.max(1, Number(value || 1));
+  const current = Array.isArray(comp.config.blanks) ? comp.config.blanks : [];
+  comp.config.blankCount = count;
+  comp.config.blanks = Array.from({ length: count }, (_, index) => ({
+    marker: index + 1,
+    type: comp.config.blankType || 'text_short',
+    answer: '',
+    ...current[index],
+  }));
+}
+
+function setClozePassage(comp: BuilderComponent, value: unknown) {
+  const passage = String(value || '');
+  comp.config.passage = passage;
+  const markers = [...passage.matchAll(/\[\[(\d+)\]\]/g)].map((match) =>
+    Number(match[1]),
+  );
+  if (markers.length > 0) {
+    setClozeBlankCount(
+      comp,
+      Math.max(Number(comp.config.blankCount || 1), ...markers),
+    );
+  }
+}
+
+function addClozeMarker(comp: BuilderComponent) {
+  const passage = String(comp.config.passage || '');
+  const markers = [...passage.matchAll(/\[\[(\d+)\]\]/g)].map((match) =>
+    Number(match[1]),
+  );
+  const next = markers.length > 0 ? Math.max(...markers) + 1 : 1;
+  comp.config.passage = `${passage}${passage ? ' ' : ''}[[${next}]]`;
+  setClozeBlankCount(comp, Math.max(Number(comp.config.blankCount || 1), next));
+}
+
+function setClozeItemType(blank: Record<string, any>, value: unknown) {
+  blank.type = String(value);
+  if (
+    ['choice', 'multi_choice'].includes(blank.type) &&
+    (!Array.isArray(blank.options) || blank.options.length === 0)
+  ) {
+    blank.options = ['A', 'B', 'C', 'D'].map((key) => ({
+      key,
+      text: `选项 ${key}`,
+    }));
+  }
+}
+
+function setClozeItemOptions(blank: Record<string, any>, value: unknown) {
+  blank.options = String(value || '')
+    .split('\n')
+    .map((text) => text.trim())
+    .filter(Boolean)
+    .map((text, index) => ({
+      key: String.fromCodePoint(65 + index),
+      text,
+    }));
+}
+
+function clozeBlanks(comp: BuilderComponent) {
+  const count = Math.max(1, Number(comp.config.blankCount || 1));
+  if (
+    !Array.isArray(comp.config.blanks) ||
+    comp.config.blanks.length !== count
+  ) {
+    setClozeBlankCount(comp, count);
+  }
+  return comp.config.blanks;
+}
+
+function clozeAnswerPlaceholder(type: string) {
+  if (type === 'multi_choice') {
+    return '按空位填写，多选用 + 连接，例如 A+C,B+D';
+  }
+  if (type === 'true_false') return '按空位填写：正确,错误,正确';
+  if (type === 'number') return '按空位填写数值，例如 12.5,30';
+  if (type === 'formula') {
+    return String.raw`按空位填写 LaTeX，例如 x^2,\frac{1}{2}`;
+  }
+  if (type === 'text_short') return '按空位填写答案，例如 路由器,TCP';
+  return '按空位填写选项编号，例如 A,C,B,D';
+}
+
+function clozeUsesType(comp: BuilderComponent, types: string[]) {
+  if (types.includes(comp.config.blankType)) return true;
+  return (comp.config.blanks || []).some((blank: any) =>
+    types.includes(blank.type),
+  );
+}
+
 function addGroupChild(group: BuilderComponent) {
+  if (group.config.countMode === 'fixed') return;
   const allowed = group.config.allowedResponseTypes || ['choice'];
   const responseType = group.config.newChildType || allowed[0];
   const definition = createEmptyTemplateDefinition();
@@ -63,6 +210,7 @@ function addGroupChild(group: BuilderComponent) {
 }
 
 function removeGroupChild(group: BuilderComponent, id: string) {
+  if (group.config.countMode === 'fixed') return;
   group.children = (group.children || []).filter((item) => item.id !== id);
 }
 </script>
@@ -142,23 +290,91 @@ function removeGroupChild(group: BuilderComponent, id: string) {
           </Form.Item>
         </template>
 
-        <!-- 共享选项完形填空 -->
+        <!-- 题干内多空 -->
         <template v-else-if="comp.type === 'cloze'">
-          <Form.Item label="文章内容">
+          <Form.Item label="题干内容">
             <Input.TextArea
-              v-model:value="comp.config.passage"
+              :value="comp.config.passage"
               :rows="8"
-              placeholder="输入文章，并用 [[1]]、[[2]]、[[3]] 标记空位"
+              placeholder="输入题干，并用 [[1]]、[[2]]、[[3]] 标记答案空"
+              @update:value="(value) => setClozePassage(comp, value)"
+            />
+            <Button class="mt-2" size="small" @click="addClozeMarker(comp)">
+              ＋ 在末尾插入下一个空位
+            </Button>
+          </Form.Item>
+          <Form.Item label="每个空的作答方式">
+            <Select
+              :value="comp.config.blankType || 'shared_options'"
+              :options="inlineResponseOptions(comp)"
+              style="width: 260px"
+              @update:value="(value) => setClozeBlankType(comp, value)"
             />
           </Form.Item>
           <Form.Item label="空位数量">
             <InputNumber
-              v-model:value="comp.config.blankCount"
+              :value="comp.config.blankCount"
               :min="1"
               :max="200"
+              @update:value="(value) => setClozeBlankCount(comp, value)"
             />
           </Form.Item>
-          <Form.Item label="共享选项（一行一个）">
+          <Form.Item
+            :label="
+              comp.config.blankTypeMode === 'per_blank'
+                ? '分别设置每个空的类型、选项和答案'
+                : '分别设置每个空的选项和答案'
+            "
+          >
+            <div class="qb-blank-list">
+              <div
+                v-for="(blank, blankIndex) in clozeBlanks(comp)"
+                :key="blank.marker || blankIndex"
+                class="qb-blank-card"
+              >
+                <div class="qb-blank-row">
+                  <Tag color="blue">空 {{ Number(blankIndex) + 1 }}</Tag>
+                  <Select
+                    v-if="comp.config.blankTypeMode === 'per_blank'"
+                    :value="blank.type"
+                    :options="inlineResponseOptions(comp)"
+                    style="width: 190px"
+                    @update:value="(value) => setClozeItemType(blank, value)"
+                  />
+                  <Tag v-else>{{ inlineResponseLabel(blank.type) }}</Tag>
+                  <Select
+                    v-if="blank.type === 'true_false'"
+                    v-model:value="blank.answer"
+                    :options="[
+                      { label: '正确', value: 'true' },
+                      { label: '错误', value: 'false' },
+                    ]"
+                    placeholder="设置正确答案"
+                  />
+                  <Input
+                    v-else
+                    v-model:value="blank.answer"
+                    :placeholder="clozeAnswerPlaceholder(blank.type)"
+                  />
+                </div>
+                <Input.TextArea
+                  v-if="['choice', 'multi_choice'].includes(blank.type)"
+                  :value="
+                    (blank.options || [])
+                      .map((item: any) => item.text)
+                      .join('\n')
+                  "
+                  :rows="4"
+                  placeholder="该空的独立选项，一行一个，例如四行分别为 A/B/C/D 的内容"
+                  @update:value="(value) => setClozeItemOptions(blank, value)"
+                />
+              </div>
+            </div>
+          </Form.Item>
+          <Form.Item
+            v-if="clozeUsesType(comp, ['shared_options'])"
+            label="所有空共用的词库（一行一个）"
+          >
             <Input.TextArea
               :value="
                 (comp.config.options || [])
@@ -169,20 +385,10 @@ function removeGroupChild(group: BuilderComponent, id: string) {
               @update:value="(value) => setClozeOptions(comp, String(value))"
             />
           </Form.Item>
-          <Form.Item label="正确答案">
-            <Input
-              :value="(comp.config.answers || []).join(',')"
-              placeholder="按空位顺序填写选项编号，例如 A,C,B,D"
-              @update:value="
-                (value) =>
-                  (comp.config.answers = String(value)
-                    .split(/[,，\s]+/)
-                    .map((item) => item.trim())
-                    .filter(Boolean))
-              "
-            />
-          </Form.Item>
-          <Form.Item label="选项使用规则">
+          <Form.Item
+            v-if="clozeUsesType(comp, ['shared_options'])"
+            label="共享选项使用规则"
+          >
             <Select
               v-model:value="comp.config.reuse"
               style="width: 220px"
@@ -395,9 +601,18 @@ function removeGroupChild(group: BuilderComponent, id: string) {
         <!-- 小题容器：递归渲染子题 -->
         <template v-else-if="comp.type === 'group'">
           <div class="qb-group-tip">
-            以下为该材料下的小题。可以在模板允许的范围内继续添加小题：
+            <template v-if="comp.config.countMode === 'fixed'">
+              本题组固定包含
+              {{ comp.config.fixedCount }} 道小题，只能编辑内容和答案。
+            </template>
+            <template v-else>
+              以下为该大题的小题，可以在模板允许的数量范围内继续添加。
+            </template>
           </div>
-          <Space class="qb-group-actions">
+          <Space
+            v-if="comp.config.countMode !== 'fixed'"
+            class="qb-group-actions"
+          >
             <Select
               v-model:value="comp.config.newChildType"
               style="width: 220px"
@@ -429,6 +644,7 @@ function removeGroupChild(group: BuilderComponent, id: string) {
                 {{ paletteMeta(child.type as any)?.name || child.type }}
               </span>
               <Button
+                v-if="comp.config.countMode !== 'fixed'"
                 size="small"
                 danger
                 :disabled="
@@ -606,6 +822,30 @@ function removeGroupChild(group: BuilderComponent, id: string) {
   display: flex;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+.qb-blank-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.qb-blank-card {
+  padding: 9px;
+  background: hsl(var(--muted) / 25%);
+  border: 1px solid hsl(var(--border));
+  border-radius: 7px;
+}
+
+.qb-blank-row {
+  display: grid;
+  grid-template-columns: auto 190px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.qb-blank-card :deep(textarea) {
+  margin-top: 8px;
 }
 
 .qb-link {

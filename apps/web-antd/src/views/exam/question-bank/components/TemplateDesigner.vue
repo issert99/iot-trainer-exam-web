@@ -5,7 +5,7 @@ import type {
   TemplateStructure,
 } from '../template-schema';
 
-import { computed, ref } from 'vue';
+import { computed, ref, toRaw } from 'vue';
 
 import {
   Button,
@@ -21,10 +21,12 @@ import {
 
 import {
   CONTENT_OPTIONS,
+  materializeTemplate,
   PROFESSIONAL_TOOL_OPTIONS,
   RESPONSE_OPTIONS,
   STRUCTURE_OPTIONS,
 } from '../template-schema';
+import QuestionPreview from './QuestionPreview.vue';
 
 defineOptions({ name: 'TemplateDesigner' });
 
@@ -39,21 +41,70 @@ type SelectedZone =
 const definition = defineModel<TemplateDefinition>({ required: true });
 const mode = ref<DesignerMode>('design');
 const selectedZone = ref<SelectedZone>('stem');
+const previewResponseType = ref<TemplateResponseType>();
+
+const INLINE_RESPONSE_LABELS: Partial<Record<TemplateResponseType, string>> = {
+  choice: '每空独立四选一（A/B/C/D）',
+  formula: '公式填空',
+  multi_choice: '每空独立多选',
+  number: '数值填空',
+  shared_options: '共享词库选词填空（如15选10）',
+  text_short: '文本填空',
+  true_false: '每空判断',
+};
+
+function responseLabel(value: TemplateResponseType) {
+  const inlineLabel = INLINE_RESPONSE_LABELS[value];
+  if (definition.value.structure === 'inline' && inlineLabel) {
+    return inlineLabel;
+  }
+  return RESPONSE_OPTIONS.find((item) => item.value === value)?.label || value;
+}
 
 const structureHelp: Record<TemplateStructure, string> = {
-  single: '一个题干配一个主要作答区',
+  group: '一大题内包含多道同类或混合小题',
   inline: '答案空直接出现在题干内容中',
-  stimulus: '一份共享材料带多道独立小题',
+  single: '一个题干配一个主要作答区',
   steps: '多个步骤前后关联并分别计分',
-  visual: '在图片、画布或专业图形上作答',
-  submission: '提交文件、录音、报告或实践成果',
+  stimulus: '一份共享材料带多道独立小题',
 };
 
 const responseLabels = computed(() =>
-  definition.value.responseTypes.map(
-    (value) =>
-      RESPONSE_OPTIONS.find((item) => item.value === value)?.label || value,
-  ),
+  definition.value.responseTypes.map((value) => responseLabel(value)),
+);
+
+const availableResponseOptions = computed(() => {
+  if (definition.value.structure !== 'inline') return RESPONSE_OPTIONS;
+  const inlineTypes = new Set<TemplateResponseType>([
+    'choice',
+    'formula',
+    'multi_choice',
+    'number',
+    'shared_options',
+    'text_short',
+    'true_false',
+  ]);
+  return RESPONSE_OPTIONS.filter((item) => inlineTypes.has(item.value)).map(
+    (item) => ({
+      ...item,
+      label: INLINE_RESPONSE_LABELS[item.value] || item.label,
+    }),
+  );
+});
+
+const isQuestionGroup = computed(
+  () =>
+    definition.value.structure === 'group' ||
+    definition.value.structure === 'steps' ||
+    definition.value.structure === 'stimulus',
+);
+
+const isInlineQuestion = computed(
+  () => definition.value.structure === 'inline',
+);
+
+const fixedResponseLabel = computed(() =>
+  responseLabel(definition.value.responseSelection.fixedType),
 );
 
 const contentLabels = computed(() =>
@@ -63,9 +114,95 @@ const contentLabels = computed(() =>
   ),
 );
 
-const selectedResponse = computed(
-  () => definition.value.responseTypes[0] || 'text_long',
+const previewResponseOptions = computed(() =>
+  definition.value.responseTypes.map((value) => ({
+    label: responseLabel(value),
+    value,
+  })),
 );
+
+const activePreviewResponse = computed<TemplateResponseType>(
+  () =>
+    (previewResponseType.value &&
+    definition.value.responseTypes.includes(previewResponseType.value)
+      ? previewResponseType.value
+      : definition.value.responseTypes[0]) || 'text_long',
+);
+
+const skeletonQuestionCount = computed(() =>
+  definition.value.subQuestions.countMode === 'fixed'
+    ? Math.min(3, Math.max(1, definition.value.subQuestions.fixedCount))
+    : 2,
+);
+
+const previewComponents = computed(() => {
+  const snapshot = structuredClone(toRaw(definition.value));
+  snapshot.responseTypes = [activePreviewResponse.value];
+  snapshot.responseSelection = {
+    mode: 'fixed',
+    fixedType: activePreviewResponse.value,
+  };
+  if (snapshot.subQuestions.enabled) {
+    const count =
+      snapshot.subQuestions.countMode === 'fixed'
+        ? snapshot.subQuestions.fixedCount
+        : Math.max(3, snapshot.subQuestions.min);
+    snapshot.subQuestions.countMode = 'fixed';
+    snapshot.subQuestions.fixedCount = Math.min(4, Math.max(1, count));
+  }
+  const components = materializeTemplate(snapshot);
+  for (const component of components) {
+    if (component.type === 'rich_stem') {
+      component.config.html = snapshot.stimulus.enabled
+        ? '阅读下面的示例材料，并完成后面各小题。这里可以放置文章、病例、实验数据、图片或音视频。'
+        : '这是使用当前模板创建的题目示例，请按要求完成作答。';
+    }
+    if (component.type === 'cloze') {
+      const blankCount = Math.max(1, snapshot.inlineAnswers.maxBlanks);
+      component.config.passage = `请完成下面各空：${Array.from(
+        { length: blankCount },
+        (_, index) => `第 ${index + 1} 空 [[${index + 1}]]`,
+      ).join('；')}。`;
+      if (activePreviewResponse.value === 'shared_options') {
+        const optionCount = Math.min(
+          snapshot.optionPool.maxOptions,
+          Math.max(snapshot.optionPool.minOptions, blankCount + 5),
+        );
+        component.config.options = Array.from(
+          { length: optionCount },
+          (_, index) => ({
+            key: String.fromCodePoint(65 + index),
+            text: `词库选项 ${String.fromCodePoint(65 + index)}`,
+          }),
+        );
+      }
+      if (
+        ['choice', 'multi_choice'].includes(activePreviewResponse.value) &&
+        Array.isArray(component.config.blanks)
+      ) {
+        component.config.blanks.forEach((blank: any, blankIndex: number) => {
+          blank.options = ['A', 'B', 'C', 'D'].map((key) => ({
+            key,
+            text: `第 ${blankIndex + 1} 空选项 ${key}`,
+          }));
+        });
+      }
+      component.config.blankCount = blankCount;
+    }
+    if (component.type === 'code_editor') {
+      component.config.starterCode =
+        '# 请在这里编写代码\n\ndef solve():\n    pass';
+    }
+    component.children?.forEach((child, index) => {
+      child.config.prompt = `第 ${index + 1} 小题：请判断或完成下面的问题。`;
+      if (child.type === 'code_editor') {
+        child.config.starterCode =
+          '# 请在这里编写代码\n\ndef solve():\n    pass';
+      }
+    });
+  }
+  return components;
+});
 
 const zoneTitle = computed(() => {
   const titles: Record<SelectedZone, string> = {
@@ -79,12 +216,41 @@ const zoneTitle = computed(() => {
 });
 
 function onStructureChange(value: TemplateStructure) {
+  mode.value = 'design';
   definition.value.structure = value;
   switch (value) {
+    case 'group': {
+      definition.value.stimulus.enabled = false;
+      definition.value.subQuestions.enabled = true;
+      definition.value.subQuestions.countMode = 'fixed';
+      definition.value.subQuestions.fixedCount = Math.max(
+        2,
+        definition.value.subQuestions.fixedCount,
+      );
+      definition.value.subQuestions.repeatable = false;
+      definition.value.subQuestions.min = Math.max(
+        2,
+        definition.value.subQuestions.min,
+      );
+      definition.value.subQuestions.max = Math.max(
+        20,
+        definition.value.subQuestions.max,
+      );
+      definition.value.inlineAnswers.enabled = false;
+      definition.value.dependencies.allowPreviousAnswerReference = false;
+      definition.value.dependencies.allowCarryForward = false;
+      selectedZone.value = 'subQuestions';
+
+      break;
+    }
     case 'inline': {
       definition.value.stimulus.enabled = false;
       definition.value.subQuestions.enabled = false;
       definition.value.inlineAnswers.enabled = true;
+      definition.value.responseSelection.mode = 'fixed';
+      definition.value.responseSelection.fixedType = 'shared_options';
+      definition.value.responseTypes = ['shared_options'];
+      previewResponseType.value = 'shared_options';
       selectedZone.value = 'response';
 
       break;
@@ -98,8 +264,11 @@ function onStructureChange(value: TemplateStructure) {
       break;
     }
     case 'steps': {
+      definition.value.stimulus.enabled = false;
       definition.value.subQuestions.enabled = true;
+      definition.value.subQuestions.countMode = 'range';
       definition.value.subQuestions.repeatable = true;
+      definition.value.inlineAnswers.enabled = false;
       definition.value.dependencies.allowPreviousAnswerReference = true;
       selectedZone.value = 'subQuestions';
 
@@ -109,7 +278,9 @@ function onStructureChange(value: TemplateStructure) {
       definition.value.stimulus.enabled = true;
       definition.value.stimulus.required = true;
       definition.value.subQuestions.enabled = true;
+      definition.value.subQuestions.countMode = 'range';
       definition.value.subQuestions.repeatable = true;
+      definition.value.inlineAnswers.enabled = false;
       definition.value.subQuestions.min = Math.max(
         1,
         definition.value.subQuestions.min,
@@ -122,31 +293,71 @@ function onStructureChange(value: TemplateStructure) {
 
       break;
     }
-    case 'visual': {
-      ensureResponse('drawing');
-      selectedZone.value = 'response';
-
-      break;
-    }
-    default: {
-      ensureResponse('file');
-      selectedZone.value = 'response';
-    }
   }
 }
 
-function ensureResponse(type: TemplateResponseType) {
-  if (!definition.value.responseTypes.includes(type)) {
-    definition.value.responseTypes.push(type);
+function onResponseModeChange(mode: 'fixed' | 'selectable') {
+  definition.value.responseSelection.mode = mode;
+  if (mode === 'fixed') {
+    const fixedType =
+      definition.value.responseSelection.fixedType ||
+      definition.value.responseTypes[0] ||
+      'choice';
+    definition.value.responseSelection.fixedType = fixedType;
+    definition.value.responseTypes = [fixedType];
+    previewResponseType.value = fixedType;
+  }
+}
+
+function onFixedResponseChange(type: TemplateResponseType) {
+  definition.value.responseSelection.fixedType = type;
+  definition.value.responseTypes = [type];
+  previewResponseType.value = type;
+  if (definition.value.structure === 'inline') {
+    definition.value.inlineAnswers.enabled = true;
+    definition.value.optionPool.enabled = type === 'shared_options';
   }
 }
 
 function onResponseChange(values: TemplateResponseType[]) {
   definition.value.responseTypes = values;
-  if (values.includes('shared_options')) {
+  if (definition.value.structure === 'inline') {
     definition.value.inlineAnswers.enabled = true;
-    definition.value.optionPool.enabled = true;
+    definition.value.optionPool.enabled = values.includes('shared_options');
   }
+}
+
+function onSubQuestionCountModeChange(mode: 'fixed' | 'range') {
+  definition.value.subQuestions.countMode = mode;
+  if (mode === 'fixed') {
+    const count = Math.max(
+      1,
+      definition.value.subQuestions.fixedCount ||
+        definition.value.subQuestions.min ||
+        1,
+    );
+    definition.value.subQuestions.fixedCount = count;
+    definition.value.subQuestions.min = count;
+    definition.value.subQuestions.max = count;
+    definition.value.subQuestions.repeatable = false;
+  } else {
+    definition.value.subQuestions.repeatable = true;
+    definition.value.subQuestions.min = Math.max(
+      1,
+      definition.value.subQuestions.min,
+    );
+    definition.value.subQuestions.max = Math.max(
+      definition.value.subQuestions.min,
+      definition.value.subQuestions.max,
+    );
+  }
+}
+
+function onFixedSubQuestionCountChange(value: unknown) {
+  const count = Math.max(1, Number(value || 1));
+  definition.value.subQuestions.fixedCount = count;
+  definition.value.subQuestions.min = count;
+  definition.value.subQuestions.max = count;
 }
 
 function selectZone(zone: SelectedZone) {
@@ -267,7 +478,7 @@ function selectZone(zone: SelectedZone) {
             >
               <span class="td-zone-name">题干内答案规则</span>
               <small>
-                最多 {{ definition.inlineAnswers.maxBlanks }} 个空
+                {{ definition.inlineAnswers.maxBlanks }} 个空
                 <span v-if="definition.optionPool.enabled">· 共用选项池</span>
               </small>
             </button>
@@ -278,7 +489,7 @@ function selectZone(zone: SelectedZone) {
             class="td-question-list"
           >
             <div
-              v-for="index in 2"
+              v-for="index in skeletonQuestionCount"
               :key="index"
               class="td-question-frame td-sub-question"
             >
@@ -318,6 +529,7 @@ function selectZone(zone: SelectedZone) {
               </button>
             </div>
             <button
+              v-if="definition.subQuestions.countMode === 'range'"
               type="button"
               class="td-add-question"
               :class="{ selected: selectedZone === 'subQuestions' }"
@@ -325,6 +537,10 @@ function selectZone(zone: SelectedZone) {
             >
               ＋ 教师可继续添加小题
             </button>
+            <div v-else class="td-fixed-question-count">
+              已固定
+              {{ definition.subQuestions.fixedCount }} 道小题，创建后不可增删
+            </div>
           </div>
 
           <div v-else class="td-question-frame">
@@ -345,19 +561,7 @@ function selectZone(zone: SelectedZone) {
               @click="selectZone('response')"
             >
               <span class="td-zone-name">作答区</span>
-              <span
-                v-if="definition.structure === 'visual'"
-                class="td-placeholder"
-              >
-                图形、标注或绘图操作区域
-              </span>
-              <span
-                v-else-if="definition.structure === 'submission'"
-                class="td-placeholder"
-              >
-                文件、录音或实践成果提交区域
-              </span>
-              <span v-else class="td-response-tags">
+              <span class="td-response-tags">
                 <Tag v-for="label in responseLabels" :key="label">{{
                   label
                 }}</Tag>
@@ -376,77 +580,29 @@ function selectZone(zone: SelectedZone) {
           </button>
         </div>
 
-        <div v-else class="td-paper td-preview">
-          <section
-            v-if="definition.stimulus.enabled"
-            class="td-preview-material"
-          >
-            <strong>阅读下面的材料，完成后面各题。</strong>
-            <p>
-              这是一段用于展示模板效果的示例材料。实际创建题目时，教师可以在这里录入文章、病例、实验数据、图片或音视频。
-            </p>
-          </section>
-
-          <template v-if="definition.structure === 'inline'">
-            <h3>请根据题意完成下列填空。</h3>
-            <p class="td-preview-paragraph">
-              在计算机网络中，负责路径选择的设备是
-              <span class="td-fake-input">请选择</span>
-              ，常用的传输层协议包括
-              <span class="td-fake-input">请输入答案</span>
-              。
-            </p>
-            <div
-              v-if="definition.optionPool.enabled"
-              class="td-preview-options"
-            >
-              选项池：A. 路由器 / B. 交换机 / C. TCP / D. UDP
+        <div v-else class="td-preview-shell">
+          <div class="td-preview-toolbar">
+            <div>
+              <strong>真实作答组件预览</strong>
+              <span>可以直接操作，效果与学生答题页面一致</span>
             </div>
-          </template>
-
-          <template v-else-if="definition.subQuestions.enabled">
-            <section
-              v-for="index in 2"
-              :key="index"
-              class="td-preview-question"
-            >
-              <strong>第 {{ index }} 小题：这是题干示例。</strong>
-              <div class="td-preview-answer">
-                <template v-if="selectedResponse === 'choice'">
-                  <span>○ A. 选项一</span><span>○ B. 选项二</span>
-                  <span>○ C. 选项三</span><span>○ D. 选项四</span>
-                </template>
-                <textarea
-                  v-else
-                  disabled
-                  placeholder="学生在这里作答"
-                ></textarea>
-              </div>
-            </section>
-          </template>
-
-          <template v-else>
-            <h3>1. 这是使用该模板创建出来的题目示例。</h3>
-            <div
-              v-if="definition.structure === 'visual'"
-              class="td-preview-special"
-            >
-              图形 / 图片操作画布
-            </div>
-            <div
-              v-else-if="definition.structure === 'submission'"
-              class="td-preview-special"
-            >
-              ＋ 点击上传作业文件或录制音频
-            </div>
-            <div v-else class="td-preview-answer">
-              <template v-if="selectedResponse === 'choice'">
-                <span>○ A. 选项一</span><span>○ B. 选项二</span>
-                <span>○ C. 选项三</span><span>○ D. 选项四</span>
-              </template>
-              <textarea v-else disabled placeholder="学生在这里作答"></textarea>
-            </div>
-          </template>
+            <Select
+              v-model:value="previewResponseType"
+              style="width: 190px"
+              :options="previewResponseOptions"
+              :placeholder="
+                previewResponseOptions.length > 0
+                  ? '选择要预览的作答方式'
+                  : '尚未选择作答方式'
+              "
+            />
+          </div>
+          <div class="td-paper td-preview">
+            <QuestionPreview
+              title="题目模板效果示例"
+              :components="previewComponents"
+            />
+          </div>
         </div>
       </main>
 
@@ -524,18 +680,40 @@ function selectZone(zone: SelectedZone) {
           </Form>
 
           <Form v-else-if="selectedZone === 'subQuestions'" layout="vertical">
-            <div class="td-switch-row">
-              <div>
-                <strong>允许添加小题</strong>
-                <p>每道小题都有自己的题干和作答区。</p>
-              </div>
-              <Switch v-model:checked="definition.subQuestions.enabled" />
+            <div class="td-setting-intro">
+              <strong>一大题内包含多道小题</strong>
+              <p>每道小题都有自己的题干、答案和分值。</p>
             </div>
             <template v-if="definition.subQuestions.enabled">
-              <Form.Item label="出题时允许继续添加和删除">
-                <Switch v-model:checked="definition.subQuestions.repeatable" />
+              <Form.Item label="小题数量方式" class="mt-4">
+                <Radio.Group
+                  :value="definition.subQuestions.countMode"
+                  button-style="solid"
+                  @update:value="
+                    (value) =>
+                      onSubQuestionCountModeChange(value as 'fixed' | 'range')
+                  "
+                >
+                  <Radio.Button value="fixed">固定数量</Radio.Button>
+                  <Radio.Button value="range">允许增减</Radio.Button>
+                </Radio.Group>
               </Form.Item>
-              <Space>
+              <Form.Item
+                v-if="definition.subQuestions.countMode === 'fixed'"
+                label="固定小题数量"
+              >
+                <InputNumber
+                  :value="definition.subQuestions.fixedCount"
+                  :min="1"
+                  :max="200"
+                  style="width: 100%"
+                  @update:value="onFixedSubQuestionCountChange"
+                />
+                <p class="td-field-help">
+                  创建题目时自动生成指定数量的小题，教师不能增加或删除。
+                </p>
+              </Form.Item>
+              <Space v-else>
                 <Form.Item label="最少">
                   <InputNumber
                     v-model:value="definition.subQuestions.min"
@@ -555,23 +733,153 @@ function selectZone(zone: SelectedZone) {
           </Form>
 
           <Form v-else-if="selectedZone === 'response'" layout="vertical">
-            <Form.Item label="教师可以选择的作答方式">
-              <Checkbox.Group
-                :value="definition.responseTypes"
-                class="td-response-grid"
-                @update:value="
-                  (values) => onResponseChange(values as TemplateResponseType[])
-                "
+            <div class="td-response-rule-title">
+              <strong>作答区如何生成？</strong>
+              <span>选择后，下方会直接说明创建题目时的效果。</span>
+            </div>
+
+            <div class="td-response-rule-list">
+              <div
+                class="td-response-rule-card"
+                :class="{
+                  active: definition.responseSelection.mode === 'fixed',
+                }"
+                @click="onResponseModeChange('fixed')"
               >
-                <Checkbox
-                  v-for="item in RESPONSE_OPTIONS"
-                  :key="item.value"
-                  :value="item.value"
+                <div class="td-response-rule-head">
+                  <Radio
+                    :checked="definition.responseSelection.mode === 'fixed'"
+                  />
+                  <span>
+                    <strong>
+                      {{
+                        isInlineQuestion
+                          ? '所有空位统一使用一种方式'
+                          : isQuestionGroup
+                            ? '所有小题使用同一种题型'
+                            : '模板直接生成指定作答区'
+                      }}
+                    </strong>
+                    <small>
+                      {{
+                        isInlineQuestion
+                          ? '例如所有空都是 A/B/C/D 单选，或全部为文本填空'
+                          : isQuestionGroup
+                            ? '适合整组判断题、整组单选题等统一题型'
+                            : '适合明确的单选、判断、代码或绘图模板'
+                      }}
+                    </small>
+                  </span>
+                </div>
+                <Select
+                  v-if="definition.responseSelection.mode === 'fixed'"
+                  :value="definition.responseSelection.fixedType"
+                  :options="availableResponseOptions"
+                  style="width: 100%"
+                  @click.stop
+                  @update:value="
+                    (value) =>
+                      onFixedResponseChange(value as TemplateResponseType)
+                  "
+                />
+                <div
+                  v-if="definition.responseSelection.mode === 'fixed'"
+                  class="td-response-result"
                 >
-                  {{ item.label }}
-                </Checkbox>
-              </Checkbox.Group>
-            </Form.Item>
+                  最终效果：
+                  <template v-if="isInlineQuestion">
+                    每个空位都生成“{{ fixedResponseLabel }}”作答控件
+                  </template>
+                  <template v-else-if="isQuestionGroup">
+                    每一道小题都直接生成“{{ fixedResponseLabel }}”作答区
+                  </template>
+                  <template v-else>
+                    创建题目后直接显示“{{ fixedResponseLabel }}”作答区
+                  </template>
+                </div>
+              </div>
+
+              <div
+                class="td-response-rule-card"
+                :class="{
+                  active: definition.responseSelection.mode === 'selectable',
+                }"
+                @click="onResponseModeChange('selectable')"
+              >
+                <div class="td-response-rule-head">
+                  <Radio
+                    :checked="
+                      definition.responseSelection.mode === 'selectable'
+                    "
+                  />
+                  <span>
+                    <strong>
+                      {{
+                        isInlineQuestion
+                          ? '每个空位可以分别选择方式'
+                          : isQuestionGroup
+                            ? '每道小题可以分别选择题型'
+                            : '创建具体题目时再选择作答区'
+                      }}
+                    </strong>
+                    <small>
+                      {{
+                        isInlineQuestion
+                          ? '适合一题中同时包含文本空、公式空和 A/B/C/D 选择空'
+                          : isQuestionGroup
+                            ? '适合一道大题中混合单选、判断、填空等题型'
+                            : '适合作为通用单题模板，由教师创建题目时决定'
+                      }}
+                    </small>
+                  </span>
+                </div>
+                <Checkbox.Group
+                  v-if="definition.responseSelection.mode === 'selectable'"
+                  :value="definition.responseTypes"
+                  class="td-response-grid"
+                  @click.stop
+                  @update:value="
+                    (values) =>
+                      onResponseChange(values as TemplateResponseType[])
+                  "
+                >
+                  <Checkbox
+                    v-for="item in availableResponseOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
+                    {{ item.label }}
+                  </Checkbox>
+                </Checkbox.Group>
+                <div
+                  v-if="definition.responseSelection.mode === 'selectable'"
+                  class="td-response-result"
+                >
+                  最终效果：
+                  {{
+                    isInlineQuestion
+                      ? '创建题目时，可以为每个空分别选择一种允许的方式'
+                      : isQuestionGroup
+                        ? '创建每道小题时，从勾选的题型中分别选择'
+                        : '创建题目时，从勾选的题型中选择一种'
+                  }}
+                </div>
+              </div>
+            </div>
+
+            <div
+              v-if="
+                definition.responseSelection.mode === 'fixed' &&
+                definition.responseSelection.fixedType === 'true_false'
+              "
+              class="td-judgment-preview"
+            >
+              <strong>实际生成的判断作答区</strong>
+              <Radio.Group>
+                <Radio value="true">正确</Radio>
+                <Radio value="false">错误</Radio>
+              </Radio.Group>
+            </div>
 
             <template
               v-if="
@@ -580,44 +888,27 @@ function selectZone(zone: SelectedZone) {
                 definition.responseTypes.includes('shared_options')
               "
             >
-              <div class="td-divider">题干内答案</div>
-              <Form.Item label="允许在题干中插入答案空">
-                <Switch v-model:checked="definition.inlineAnswers.enabled" />
-              </Form.Item>
-              <Form.Item
-                v-if="definition.inlineAnswers.enabled"
-                label="最多空位数"
-              >
+              <div class="td-divider">空位规则</div>
+              <Form.Item label="空位数量">
                 <InputNumber
                   v-model:value="definition.inlineAnswers.maxBlanks"
                   :min="1"
                   :max="200"
                 />
               </Form.Item>
-              <Form.Item
-                v-if="definition.inlineAnswers.enabled"
-                label="答案空可以使用"
+              <div
+                v-if="definition.responseTypes.includes('shared_options')"
+                class="td-switch-row"
               >
-                <Checkbox.Group
-                  v-model:value="definition.inlineAnswers.allowedTypes"
-                  :options="[
-                    { label: '文本', value: 'text' },
-                    { label: '数值', value: 'number' },
-                    { label: '下拉选择', value: 'dropdown' },
-                    { label: '公式', value: 'formula' },
-                    { label: '共享选项', value: 'shared_options' },
-                  ]"
-                  class="td-check-list"
-                />
-              </Form.Item>
-              <div class="td-switch-row">
                 <div>
                   <strong>多个空共用选项池</strong>
-                  <p>适合英语选词填空、术语填空。</p>
+                  <p>已选择共享选项作答，所有空位共用同一组选项。</p>
                 </div>
-                <Switch v-model:checked="definition.optionPool.enabled" />
+                <Tag color="blue">已启用</Tag>
               </div>
-              <template v-if="definition.optionPool.enabled">
+              <template
+                v-if="definition.responseTypes.includes('shared_options')"
+              >
                 <Space>
                   <Form.Item label="最少选项">
                     <InputNumber
@@ -707,10 +998,15 @@ function selectZone(zone: SelectedZone) {
 
 <style scoped>
 .td {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   background: hsl(var(--background));
   border: 1px solid hsl(var(--border));
-  border-radius: 10px;
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgb(15 23 42 / 6%);
 }
 
 .td-toolbar {
@@ -719,7 +1015,9 @@ function selectZone(zone: SelectedZone) {
   align-items: center;
   justify-content: space-between;
   padding: 14px 18px;
-  background: hsl(var(--muted) / 35%);
+  background:
+    linear-gradient(90deg, hsl(var(--primary) / 7%), transparent 35%),
+    hsl(var(--muted) / 28%);
   border-bottom: 1px solid hsl(var(--border));
 }
 
@@ -735,8 +1033,10 @@ function selectZone(zone: SelectedZone) {
 
 .td-workbench {
   display: grid;
+  flex: 1;
   grid-template-columns: 228px minmax(420px, 1fr) 330px;
-  min-height: 690px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .td-structures,
@@ -747,11 +1047,25 @@ function selectZone(zone: SelectedZone) {
 
 .td-structures {
   padding: 14px 12px;
+  overflow-y: auto;
   border-right: 1px solid hsl(var(--border));
 }
 
 .td-settings {
+  overflow-y: auto;
   border-left: 1px solid hsl(var(--border));
+}
+
+.td-structures,
+.td-settings,
+.td-setting-body {
+  scrollbar-width: none;
+}
+
+.td-structures::-webkit-scrollbar,
+.td-settings::-webkit-scrollbar,
+.td-setting-body::-webkit-scrollbar {
+  display: none;
 }
 
 .td-panel-title {
@@ -828,6 +1142,7 @@ function selectZone(zone: SelectedZone) {
 }
 
 .td-miniature.is-stimulus i:not(:first-child),
+.td-miniature.is-group i,
 .td-miniature.is-steps i {
   width: 75%;
   margin-left: 8px;
@@ -847,9 +1162,14 @@ function selectZone(zone: SelectedZone) {
 }
 
 .td-canvas {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   padding: 18px;
-  background: hsl(var(--muted) / 26%);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 0, hsl(var(--primary) / 7%), transparent 42%),
+    hsl(var(--muted) / 24%);
 }
 
 .td-canvas-head {
@@ -871,12 +1191,19 @@ function selectZone(zone: SelectedZone) {
 }
 
 .td-paper {
-  min-height: 596px;
+  flex: 1;
+  min-height: 0;
   padding: 24px;
+  overflow-y: auto;
+  scrollbar-width: none;
   background: white;
   border: 1px solid hsl(var(--border));
   border-radius: 9px;
   box-shadow: 0 5px 20px rgb(15 23 42 / 5%);
+}
+
+.td-paper::-webkit-scrollbar {
+  display: none;
 }
 
 .dark .td-paper {
@@ -1029,6 +1356,16 @@ function selectZone(zone: SelectedZone) {
   border-radius: 7px;
 }
 
+.td-fixed-question-count {
+  padding: 10px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+  text-align: center;
+  background: hsl(var(--muted) / 28%);
+  border: 1px solid hsl(var(--border));
+  border-radius: 7px;
+}
+
 .td-advanced-entry {
   display: flex;
   justify-content: space-between;
@@ -1043,77 +1380,39 @@ function selectZone(zone: SelectedZone) {
   border-radius: 7px;
 }
 
-.td-preview {
-  color: #1f2937;
+.td-preview-shell {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
 }
 
-.dark .td-preview {
-  color: hsl(var(--foreground));
-}
-
-.td-preview-material {
-  padding: 18px;
-  margin-bottom: 24px;
-  line-height: 1.8;
-  background: #f7f9fc;
-  border-left: 3px solid #91caff;
-}
-
-.dark .td-preview-material {
-  background: hsl(var(--muted) / 30%);
-}
-
-.td-preview-question {
-  padding: 18px 0;
-  border-bottom: 1px solid hsl(var(--border));
-}
-
-.td-preview-answer {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 13px;
-  margin-top: 16px;
-}
-
-.td-preview-answer textarea {
-  grid-column: 1 / -1;
-  min-height: 100px;
-  padding: 10px;
-  resize: none;
-  background: transparent;
+.td-preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: hsl(var(--background) / 88%);
   border: 1px solid hsl(var(--border));
-  border-radius: 6px;
-}
-
-.td-preview-paragraph {
-  line-height: 2.8;
-}
-
-.td-fake-input {
-  display: inline-block;
-  min-width: 105px;
-  padding: 0 10px;
-  line-height: 30px;
-  color: #9ca3af;
-  border: 1px solid #d1d5db;
-  border-radius: 5px;
-}
-
-.td-preview-options {
-  padding: 12px;
-  background: #f7f9fc;
-  border-radius: 6px;
-}
-
-.td-preview-special {
-  display: grid;
-  place-items: center;
-  min-height: 260px;
-  margin-top: 20px;
-  color: hsl(var(--muted-foreground));
-  background: hsl(var(--muted) / 20%);
-  border: 1px dashed hsl(var(--border));
   border-radius: 8px;
+  box-shadow: 0 3px 12px rgb(15 23 42 / 4%);
+  backdrop-filter: blur(8px);
+}
+
+.td-preview-toolbar > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.td-preview-toolbar span {
+  margin-top: 2px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+
+.td-preview {
+  color: hsl(var(--foreground));
 }
 
 .td-zone-nav {
@@ -1142,15 +1441,100 @@ function selectZone(zone: SelectedZone) {
 }
 
 .td-setting-body {
-  max-height: 615px;
   padding: 16px;
-  overflow-y: auto;
 }
 
 .td-setting-intro {
   padding: 14px;
   background: hsl(var(--muted) / 35%);
   border-radius: 7px;
+}
+
+.td-field-help {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+}
+
+.td-response-rule-title {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 12px;
+}
+
+.td-response-rule-title span {
+  margin-top: 3px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+
+.td-response-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.td-response-rule-card {
+  padding: 13px;
+  cursor: pointer;
+  background: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  border-radius: 9px;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.td-response-rule-card:hover {
+  border-color: hsl(var(--primary) / 45%);
+}
+
+.td-response-rule-card.active {
+  background: hsl(var(--primary) / 5%);
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 8%);
+}
+
+.td-response-rule-head {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 11px;
+}
+
+.td-response-rule-head > span {
+  display: flex;
+  flex-direction: column;
+}
+
+.td-response-rule-head small {
+  margin-top: 3px;
+  line-height: 1.45;
+  color: hsl(var(--muted-foreground));
+}
+
+.td-response-result {
+  padding: 8px 10px;
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 7%);
+  border-radius: 6px;
+}
+
+.td-judgment-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  margin-bottom: 18px;
+  background: hsl(var(--primary) / 5%);
+  border: 1px solid hsl(var(--primary) / 22%);
+  border-radius: 8px;
 }
 
 .td-switch-row {

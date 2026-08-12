@@ -133,6 +133,7 @@ catalog:
   lefthook: ^2.1.8
   lodash.clonedeep: ^4.5.0
   lucide-vue-next: ^0.577.0
+  mathlive: ^0.110.0
   monaco-editor: ^0.56.0
   nitropack: ^2.13.4
   nprogress: ^0.2.0

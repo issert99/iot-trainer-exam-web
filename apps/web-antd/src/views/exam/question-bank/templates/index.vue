@@ -570,13 +570,21 @@ onMounted(loadData);
 }
 
 .tpl-editor {
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  padding-bottom: 24px;
-  overflow: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .tpl-meta-card {
+  flex: none;
   margin-bottom: 16px;
+}
+
+.tpl-editor :deep(.td) {
+  flex: 1;
+  min-height: 0;
 }
 
 .tpl-meta-grid {
