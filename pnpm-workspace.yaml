@@ -44,6 +44,7 @@ catalog:
   '@ctrl/tinycolor': ^4.2.0
   '@eslint-community/eslint-plugin-eslint-comments': ^4.7.1
   '@eslint/js': ^10.0.1
+  '@guolao/vue-monaco-editor': ^1.6.0
   '@iconify/json': ^2.2.476
   '@iconify/tailwind4': ^1.2.3
   '@iconify/vue': ^5.0.1
@@ -132,6 +133,7 @@ catalog:
   lefthook: ^2.1.8
   lodash.clonedeep: ^4.5.0
   lucide-vue-next: ^0.577.0
+  monaco-editor: ^0.56.0
   nitropack: ^2.13.4
   nprogress: ^0.2.0
   ora: ^9.4.0
