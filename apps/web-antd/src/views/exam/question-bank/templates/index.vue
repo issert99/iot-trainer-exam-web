@@ -1,5 +1,6 @@
 <script lang="ts" setup>
-import type { TemplateDefinition, TemplateScopeType } from '../template-schema';
+import type { PaperDocument } from '../paper-schema';
+import type { TemplateScopeType } from '../template-schema';
 
 import type { QbTemplate } from '#/api/core';
 
@@ -31,15 +32,14 @@ import {
   updateQbTemplateApi,
 } from '#/api/core';
 
-import TemplateDesigner from '../components/TemplateDesigner.vue';
+import PaperCanvasDesigner from '../components/PaperCanvasDesigner.vue';
 import {
-  createEmptyTemplateDefinition,
-  decodeTemplateDefinition,
-  encodeTemplateDefinition,
-  formatTemplateScope,
-  parseTemplateScope,
-  STRUCTURE_OPTIONS,
-} from '../template-schema';
+  createEmptyPaperDocument,
+  decodePaperDocument,
+  encodePaperDocument,
+  paperSummary,
+} from '../paper-schema';
+import { formatTemplateScope, parseTemplateScope } from '../template-schema';
 
 defineOptions({ name: 'QuestionTemplates' });
 
@@ -65,10 +65,10 @@ const orgOptions = ref<OrgOptions>({
 });
 
 const form = reactive<{
-  definition: TemplateDefinition;
   description: string;
   id: string;
   name: string;
+  paper: PaperDocument;
   scopeId: string;
   scopeType: TemplateScopeType;
 }>({
@@ -77,7 +77,7 @@ const form = reactive<{
   description: '',
   scopeType: 'public',
   scopeId: '',
-  definition: createEmptyTemplateDefinition(),
+  paper: createEmptyPaperDocument(),
 });
 
 const treeData = computed<TreeNode[]>(() => [
@@ -210,7 +210,7 @@ async function openCreate() {
   form.id = '';
   form.name = '';
   form.description = '';
-  form.definition = createEmptyTemplateDefinition();
+  form.paper = createEmptyPaperDocument();
   resetFormScope();
   view.value = 'edit';
   await nextTick();
@@ -223,7 +223,7 @@ async function openEdit(row: QbTemplate) {
   form.description = row.description || '';
   form.scopeType = scope.type;
   form.scopeId = scope.id;
-  form.definition = decodeTemplateDefinition(row.components);
+  form.paper = decodePaperDocument(row.components);
   view.value = 'edit';
   await nextTick();
 }
@@ -239,8 +239,8 @@ async function saveTemplate() {
     message.warning('请填写模板名称');
     return;
   }
-  if (form.definition.responseTypes.length === 0) {
-    message.warning('请至少选择一种作答方式');
+  if (paperSummary(form.paper).responseCount === 0) {
+    message.warning('请至少添加一个作答组件');
     return;
   }
   if (form.scopeType !== 'public' && !form.scopeId) {
@@ -253,12 +253,12 @@ async function saveTemplate() {
       name: form.name.trim(),
       description: form.description.trim(),
       scope: formatTemplateScope(form.scopeType, form.scopeId),
-      components: encodeTemplateDefinition(form.definition),
+      components: encodePaperDocument(form.paper),
     };
     await (form.id
       ? updateQbTemplateApi(form.id, payload)
       : createQbTemplateApi(payload));
-    message.success('模板规则已保存');
+    message.success('卷面模板已保存');
     view.value = 'list';
     await loadData();
   } catch {
@@ -281,13 +281,11 @@ function removeTemplate(row: QbTemplate) {
 }
 
 function templateSummary(row: QbTemplate) {
-  const definition = decodeTemplateDefinition(row.components);
-  const structure =
-    STRUCTURE_OPTIONS.find((item) => item.value === definition.structure)
-      ?.label || '自定义结构';
+  const paper = decodePaperDocument(row.components);
+  const summary = paperSummary(paper);
   return {
-    definition,
-    structure,
+    paper,
+    structure: summary.label,
   };
 }
 
@@ -331,7 +329,7 @@ onMounted(loadData);
         <div class="tpl-list-head">
           <div>
             <h2>{{ selectedNodeTitle }}</h2>
-            <p>模板只定义结构、允许的作答方式和规则，不保存具体题干与答案。</p>
+            <p>管理卷面模板，用于快速创建题目。</p>
           </div>
           <Space>
             <Input
@@ -368,23 +366,13 @@ onMounted(loadData);
               <div class="tpl-tags">
                 <Tag color="blue">{{ templateSummary(row).structure }}</Tag>
                 <Tag>{{ scopeLabel(row.scope) }}</Tag>
-                <Tag v-if="templateSummary(row).definition.stimulus.enabled">
-                  共享材料
-                </Tag>
-                <Tag
-                  v-if="templateSummary(row).definition.subQuestions.enabled"
-                >
-                  多小题
-                </Tag>
-                <Tag v-if="templateSummary(row).definition.optionPool.enabled">
-                  共享选项池
-                </Tag>
+                <Tag color="processing">自定义</Tag>
               </div>
               <div class="tpl-card-actions">
                 <span>{{ row.updated_at || '' }}</span>
                 <Space>
                   <Button type="link" size="small" @click="openEdit(row)">
-                    编辑规则
+                    编辑卷面
                   </Button>
                   <Button
                     type="link"
@@ -406,8 +394,7 @@ onMounted(loadData);
     <div v-else class="tpl-editor">
       <div class="tpl-editor-head">
         <div>
-          <h2>{{ form.id ? '编辑模板规则' : '新建模板规则' }}</h2>
-          <p>这里定义以后创建题目时允许出现的结构和规则，不填写具体题目。</p>
+          <h2>{{ form.id ? '编辑卷面模板' : '新建卷面模板' }}</h2>
         </div>
         <Space>
           <Button @click="backToList">返回</Button>
@@ -423,7 +410,7 @@ onMounted(loadData);
             <Form.Item label="模板名称" required>
               <Input
                 v-model:value="form.name"
-                placeholder="例如：共享选项完形填空"
+                placeholder="例如：综合阅读 + 画图说明"
               />
             </Form.Item>
             <Form.Item label="保存位置" required>
@@ -439,13 +426,13 @@ onMounted(loadData);
           <Form.Item label="用途说明">
             <Input
               v-model:value="form.description"
-              placeholder="说明这个模板适合创建什么样的题目"
+              placeholder="说明这个卷面模板适合什么场景"
             />
           </Form.Item>
         </Form>
       </Card>
 
-      <TemplateDesigner v-model="form.definition" />
+      <PaperCanvasDesigner v-model="form.paper" />
     </div>
   </Page>
 </template>

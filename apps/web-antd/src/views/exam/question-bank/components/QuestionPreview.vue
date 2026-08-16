@@ -185,9 +185,12 @@ function clozeUsesSharedOptions(config: BuilderComponent['config']) {
       <template v-for="comp in components" :key="comp.id">
         <!-- 题干：直接融入正文，不加「第 N 块」 -->
         <section v-if="comp.type === 'rich_stem'" class="qb-section">
-          <div class="qb-stem">
-            {{ comp.config.html || '（未填写题干）' }}
-          </div>
+          <div
+            v-if="comp.config.html"
+            class="qb-stem"
+            v-html="comp.config.html"
+          ></div>
+          <div v-else class="qb-stem qb-stem-empty">（未填写题干）</div>
           <img
             v-if="comp.config.imageUrl"
             :src="comp.config.imageUrl"
@@ -680,7 +683,18 @@ function clozeUsesSharedOptions(config: BuilderComponent['config']) {
   font-size: 15px;
   line-height: 1.75;
   color: hsl(var(--foreground));
-  white-space: pre-wrap;
+}
+
+.qb-stem :deep(p) {
+  margin: 0 0 0.5em;
+}
+
+.qb-stem :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.qb-stem-empty {
+  color: hsl(var(--muted-foreground));
 }
 
 .qb-stem-img {
