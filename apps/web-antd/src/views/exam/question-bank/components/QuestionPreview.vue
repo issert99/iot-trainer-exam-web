@@ -334,6 +334,7 @@ function clozeUsesSharedOptions(config: BuilderComponent['config']) {
             :prompt="comp.config.prompt"
             :languages="comp.config.languages"
             :default-language="comp.config.defaultLanguage"
+            :starter-code="comp.config.starterCode"
           />
         </section>
 
