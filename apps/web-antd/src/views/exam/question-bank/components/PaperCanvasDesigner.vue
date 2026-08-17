@@ -6,6 +6,7 @@ import type {
   PaperBlockType,
   PaperDocument,
   PaperPaletteItem,
+  PassageProps,
 } from '../paper-schema';
 
 import {
@@ -40,9 +41,11 @@ import {
   PAPER_PALETTE,
   PAPER_PRESETS,
   paperBlockLabel,
-  paperToBuilderComponents,
+  paperForDemoPreview,
   removePaperBlock,
+  syncChoiceOptionShells,
 } from '../paper-schema';
+import PassageBlankEditor from './PassageBlankEditor.vue';
 import QuestionPreview from './QuestionPreview.vue';
 
 defineOptions({ name: 'PaperCanvasDesigner' });
@@ -63,9 +66,7 @@ const selectedBlock = computed(() => {
   return findPaperBlock(document.value.blocks, selectedId.value);
 });
 
-const previewComponents = computed(() =>
-  paperToBuilderComponents(document.value),
-);
+const previewComponents = computed(() => paperForDemoPreview(document.value));
 
 const responseCount = computed(() =>
   countResponseBlocks(document.value.blocks),
@@ -117,6 +118,7 @@ function addBlock(type: PaperBlockType, parent?: PaperBlock) {
 function applyPreset(id: string) {
   const preset = PAPER_PRESETS.find((item) => item.id === id);
   if (!preset) return;
+  document.value.role = 'template';
   document.value.blocks = preset.build();
   selectedId.value = document.value.blocks[0]?.id;
   void nextTick(() => setupAllSortables());
@@ -336,17 +338,33 @@ function ensureScoring(block: PaperBlock) {
   }
 }
 
-function addOption(block: PaperBlock) {
-  const options = block.props.options || [];
-  const nextKey = String.fromCodePoint(65 + options.length);
-  options.push({ key: nextKey, text: `选项 ${nextKey}` });
-  block.props.options = options;
+function setOptionCount(block: PaperBlock, count: null | number | string) {
+  block.props.optionCount = Number(count) || 4;
+  syncChoiceOptionShells(block.props);
 }
 
-function removeOption(block: PaperBlock, index: number) {
-  const options = [...(block.props.options || [])];
-  options.splice(index, 1);
-  block.props.options = options;
+function shellOptionKeys(block: PaperBlock) {
+  if (block.type === 'true_false') {
+    return (block.props.options || [{ key: 'T' }, { key: 'F' }]).map(
+      (item: { key: string }) => item.key,
+    );
+  }
+  const count = Math.max(
+    2,
+    Number(block.props.optionCount || block.props.options?.length || 4),
+  );
+  return Array.from({ length: count }, (_, index) =>
+    String.fromCodePoint(65 + index),
+  );
+}
+
+function shellPairIndexes(block: PaperBlock) {
+  const count = Math.max(2, Number(block.props.pairCount || 4));
+  return Array.from({ length: count }, (_, index) => index + 1);
+}
+
+function asPassage(block: PaperBlock): PassageProps {
+  return block.props as PassageProps;
 }
 
 watch(mode, () => {
@@ -377,7 +395,7 @@ onBeforeUnmount(() => {
   <div class="paper-designer">
     <div class="paper-designer-toolbar">
       <div class="paper-designer-toolbar-left">
-        <strong>卷面编辑</strong>
+        <strong>空白卷纸</strong>
         <span class="paper-designer-meta">
           {{ document.blocks.length }} 块 · {{ responseCount }} 处作答
         </span>
@@ -387,19 +405,22 @@ onBeforeUnmount(() => {
           :type="mode === 'design' ? 'primary' : 'default'"
           @click="mode = 'design'"
         >
-          编辑
+          编辑卷面
         </Button>
         <Button
           :type="mode === 'preview' ? 'primary' : 'default'"
           @click="mode = 'preview'"
         >
-          预览
+          示例预览
         </Button>
       </Space>
     </div>
 
     <div v-if="mode === 'preview'" class="paper-designer-preview">
-      <QuestionPreview :components="previewComponents" title="预览" />
+      <div class="paper-demo-banner">
+        假数据示意，不会写回模板。学生看到的交互与此类似。
+      </div>
+      <QuestionPreview :components="previewComponents" title="示例预览" />
     </div>
 
     <div v-else ref="canvasRoot" class="paper-designer-body">
@@ -407,12 +428,12 @@ onBeforeUnmount(() => {
         <Input
           v-model:value="paletteKeyword"
           allow-clear
-          placeholder="搜索组件"
+          placeholder="搜索插入项"
           size="small"
         />
 
         <div class="paper-preset-row">
-          <div class="paper-section-title">常用组合</div>
+          <div class="paper-section-title">快捷配方（可再改）</div>
           <button
             v-for="preset in PAPER_PRESETS"
             :key="preset.id"
@@ -460,7 +481,7 @@ onBeforeUnmount(() => {
         <div class="paper-canvas-list" data-paper-list="root" data-parent-id="">
           <Empty
             v-if="document.blocks.length === 0"
-            description="从左侧添加组件"
+            description="空白卷纸：从左侧插入，或点快捷配方"
           />
 
           <template v-for="block in document.blocks" :key="block.id">
@@ -477,23 +498,62 @@ onBeforeUnmount(() => {
                 <button class="paper-block-handle" type="button" title="拖动">
                   ⋮⋮
                 </button>
-                <Tag>{{ PAPER_KIND_LABEL[block.kind] }}</Tag>
                 <strong>{{ paperBlockLabel(block) }}</strong>
-                <span class="paper-block-type">{{ block.type }}</span>
+                <Tag v-if="block.scoring">{{ block.scoring.score }} 分</Tag>
               </div>
 
               <div class="paper-block-body">
                 <div
                   v-if="block.type === 'stem' || block.type === 'tip'"
-                  class="paper-block-html"
-                  v-html="block.props.html"
-                ></div>
-                <div
-                  v-else-if="block.type === 'media'"
-                  class="paper-block-muted"
+                  class="paper-face-shell"
                 >
-                  {{ block.props.mediaType }} ·
-                  {{ block.props.url || '未设置地址' }}
+                  {{
+                    block.props.html
+                      ? '已有占位说明（题目侧可替换）'
+                      : '文本区（创建题目时填写）'
+                  }}
+                </div>
+                <div
+                  v-else-if="block.type === 'passage'"
+                  class="paper-face-passage"
+                >
+                  <div class="paper-face-shell-line">
+                    挖空文 · {{ asPassage(block).slots?.length || 0 }} 空
+                  </div>
+                  <div class="paper-face-blanks">
+                    <span
+                      v-for="slot in asPassage(block).slots || []"
+                      :key="slot.marker"
+                      class="paper-face-blank"
+                      :class="{
+                        pool: slot.binding === 'shared_pool',
+                        local: slot.binding === 'local_choice',
+                      }"
+                    >
+                      {{ slot.marker }}
+                      <small v-if="slot.binding === 'local_choice'">
+                        {{ slot.optionCount || 4 }}选
+                      </small>
+                      <small v-else-if="slot.binding === 'shared_pool'">
+                        词库
+                      </small>
+                    </span>
+                  </div>
+                  <div v-if="asPassage(block).pool" class="paper-face-pool-box">
+                    词库约 {{ asPassage(block).pool?.size }} 词
+                  </div>
+                </div>
+                <div
+                  v-else-if="
+                    block.type === 'listening' || block.type === 'media'
+                  "
+                  class="paper-face-media"
+                >
+                  {{ block.type === 'listening' ? '音频材料位' : '媒体材料位' }}
+                  <span v-if="block.props.maxPlays">
+                    · 最多 {{ block.props.maxPlays }} 次
+                  </span>
+                  <div class="paper-muted">创建题目时上传</div>
                 </div>
                 <div
                   v-else-if="
@@ -501,22 +561,80 @@ onBeforeUnmount(() => {
                     block.type === 'multi_choice' ||
                     block.type === 'true_false'
                   "
-                  class="paper-block-options"
+                  class="paper-face-options"
                 >
                   <div
-                    v-for="option in block.props.options || []"
-                    :key="option.key"
+                    v-for="key in shellOptionKeys(block)"
+                    :key="key"
+                    class="paper-face-option"
                   >
-                    {{ option.key }}. {{ option.text }}
+                    <span class="paper-face-radio"></span>
+                    {{ key }}.
+                    <span class="paper-muted">选项文案（创建题时填）</span>
                   </div>
                 </div>
                 <div
-                  v-else-if="block.kind === 'response'"
-                  class="paper-block-muted"
+                  v-else-if="block.type === 'matching'"
+                  class="paper-face-options"
                 >
-                  作答区 ·
-                  {{ block.scoring?.score ?? 0 }} 分 ·
-                  {{ block.scoring?.judgeMode || 'none' }}
+                  <div class="paper-muted">
+                    匹配 · {{ block.props.pairCount || 4 }} 对
+                  </div>
+                  <div
+                    v-for="index in shellPairIndexes(block)"
+                    :key="index"
+                    class="paper-face-option"
+                  >
+                    L{{ index }} —— R{{ index }}
+                  </div>
+                </div>
+                <div
+                  v-else-if="block.type === 'text_long'"
+                  class="paper-face-write"
+                >
+                  写作/长答作答区
+                </div>
+                <div
+                  v-else-if="block.type === 'text_short'"
+                  class="paper-face-write"
+                >
+                  短答作答区
+                </div>
+                <div
+                  v-else-if="block.type === 'audio_record'"
+                  class="paper-face-write"
+                >
+                  录音作答区 · 最长 {{ block.props.maxSeconds || 120 }}s
+                </div>
+                <div
+                  v-else-if="block.type === 'hotspot'"
+                  class="paper-face-media"
+                >
+                  图片标注区（创建题时上传底图）
+                </div>
+                <div
+                  v-else-if="block.type === 'classify'"
+                  class="paper-face-classify"
+                >
+                  <span class="paper-muted">
+                    {{ block.props.binCount || 2 }} 类 ·
+                    {{ block.props.itemCount || 4 }} 条目
+                  </span>
+                </div>
+                <div
+                  v-else-if="block.type === 'sorting'"
+                  class="paper-face-classify"
+                >
+                  <span class="paper-muted">
+                    排序 · {{ block.props.itemCount || 4 }} 项
+                  </span>
+                </div>
+                <div v-else-if="block.kind === 'response'" class="paper-muted">
+                  {{
+                    PAPER_PALETTE.find((item) => item.type === block.type)
+                      ?.label || block.type
+                  }}
+                  · {{ block.scoring?.score ?? 0 }} 分
                 </div>
 
                 <div
@@ -552,26 +670,30 @@ onBeforeUnmount(() => {
                     <div class="paper-block-body">
                       <div
                         v-if="child.type === 'stem' || child.type === 'tip'"
-                        class="paper-block-html"
-                        v-html="child.props.html"
-                      ></div>
+                        class="paper-face-shell"
+                      >
+                        材料区（创建题目时填写）
+                      </div>
                       <div
                         v-else-if="
                           child.type === 'choice' ||
                           child.type === 'multi_choice' ||
                           child.type === 'true_false'
                         "
-                        class="paper-block-options"
+                        class="paper-face-options"
                       >
                         <div
-                          v-for="option in child.props.options || []"
-                          :key="option.key"
+                          v-for="key in shellOptionKeys(child)"
+                          :key="key"
+                          class="paper-face-option"
                         >
-                          {{ option.key }}. {{ option.text }}
+                          <span class="paper-face-radio"></span>
+                          {{ key }}.
+                          <span class="paper-muted">选项</span>
                         </div>
                       </div>
                       <div v-else class="paper-block-muted">
-                        {{ child.type }}
+                        {{ paperBlockLabel(child) }}
                         <template v-if="child.scoring">
                           · {{ child.scoring.score }} 分
                         </template>
@@ -587,7 +709,7 @@ onBeforeUnmount(() => {
 
       <aside class="paper-props">
         <template v-if="selectedBlock">
-          <div class="paper-section-title">属性</div>
+          <div class="paper-section-title">规则</div>
           <div class="paper-props-head">
             <Tag color="processing">
               {{ PAPER_KIND_LABEL[selectedBlock.kind] }}
@@ -596,20 +718,42 @@ onBeforeUnmount(() => {
           </div>
 
           <label class="paper-field">
-            <span>标题</span>
+            <span>块标题</span>
             <Input v-model:value="selectedBlock.props.title" />
           </label>
 
           <template
             v-if="selectedBlock.type === 'stem' || selectedBlock.type === 'tip'"
           >
+            <div class="paper-rule-note">
+              模板阶段只占位；文章/说明在创建题目时填写。可选填默认提示文案。
+            </div>
             <label class="paper-field">
-              <span>内容 HTML</span>
-              <Textarea v-model:value="selectedBlock.props.html" :rows="8" />
+              <span>默认提示（可选）</span>
+              <Textarea v-model:value="selectedBlock.props.html" :rows="4" />
             </label>
           </template>
 
-          <template v-else-if="selectedBlock.type === 'media'">
+          <template v-else-if="selectedBlock.type === 'passage'">
+            <PassageBlankEditor
+              :model-value="asPassage(selectedBlock)"
+              @update:model-value="
+                (value) => {
+                  if (selectedBlock) Object.assign(selectedBlock.props, value);
+                }
+              "
+            />
+          </template>
+
+          <template
+            v-else-if="
+              selectedBlock.type === 'media' ||
+              selectedBlock.type === 'listening'
+            "
+          >
+            <div class="paper-rule-note">
+              音频/媒体文件在创建题目时上传；此处只配置播放规则。
+            </div>
             <label class="paper-field">
               <span>类型</span>
               <Select
@@ -622,37 +766,40 @@ onBeforeUnmount(() => {
               />
             </label>
             <label class="paper-field">
-              <span>地址</span>
-              <Input v-model:value="selectedBlock.props.url" />
+              <span>最多播放次数</span>
+              <InputNumber
+                v-model:value="selectedBlock.props.maxPlays"
+                :min="1"
+                style="width: 100%"
+              />
             </label>
           </template>
 
           <template
             v-else-if="
               selectedBlock.type === 'choice' ||
-              selectedBlock.type === 'multi_choice' ||
-              selectedBlock.type === 'true_false'
+              selectedBlock.type === 'multi_choice'
             "
           >
-            <div
-              v-for="(option, index) in selectedBlock.props.options || []"
-              :key="option.key"
-              class="paper-option-edit"
-            >
-              <Input v-model:value="option.key" style="width: 56px" />
-              <Input v-model:value="option.text" />
-              <Button
-                danger
-                size="small"
-                type="text"
-                @click="removeOption(selectedBlock, Number(index))"
-              >
-                删
-              </Button>
-            </div>
-            <Button size="small" @click="addOption(selectedBlock)">
-              添加选项
-            </Button>
+            <label class="paper-field">
+              <span>选项数量</span>
+              <InputNumber
+                :value="selectedBlock.props.optionCount || 4"
+                :min="2"
+                :max="12"
+                style="width: 100%"
+                @update:value="
+                  (value) => {
+                    if (selectedBlock) setOptionCount(selectedBlock, value);
+                  }
+                "
+              />
+            </label>
+            <div class="paper-rule-note">选项文案在创建题目时填写</div>
+          </template>
+
+          <template v-else-if="selectedBlock.type === 'true_false'">
+            <div class="paper-rule-note">判断题固定「正确 / 错误」</div>
           </template>
 
           <template
@@ -662,7 +809,7 @@ onBeforeUnmount(() => {
             "
           >
             <label class="paper-field">
-              <span>占位提示</span>
+              <span>占位提示（可选）</span>
               <Input v-model:value="selectedBlock.props.placeholder" />
             </label>
             <label class="paper-field">
@@ -677,7 +824,7 @@ onBeforeUnmount(() => {
 
           <template v-else-if="selectedBlock.type === 'number'">
             <label class="paper-field">
-              <span>单位</span>
+              <span>单位（可选）</span>
               <Input v-model:value="selectedBlock.props.unit" />
             </label>
             <label class="paper-field">
@@ -690,27 +837,85 @@ onBeforeUnmount(() => {
             </label>
           </template>
 
-          <template v-else-if="selectedBlock.type === 'code'">
+          <template v-else-if="selectedBlock.type === 'matching'">
             <label class="paper-field">
-              <span>语言</span>
-              <Input v-model:value="selectedBlock.props.language" />
+              <span>匹配对数</span>
+              <InputNumber
+                v-model:value="selectedBlock.props.pairCount"
+                :min="2"
+                :max="20"
+                style="width: 100%"
+              />
+            </label>
+            <div class="paper-rule-note">左右项文案在创建题目时填写</div>
+          </template>
+
+          <template v-else-if="selectedBlock.type === 'audio_record'">
+            <label class="paper-field">
+              <span>提示语（可选）</span>
+              <Input v-model:value="selectedBlock.props.tip" />
             </label>
             <label class="paper-field">
-              <span>起始代码</span>
-              <Textarea
-                v-model:value="selectedBlock.props.starterCode"
-                :rows="6"
+              <span>最长秒数</span>
+              <InputNumber
+                v-model:value="selectedBlock.props.maxSeconds"
+                :min="10"
+                style="width: 100%"
               />
             </label>
           </template>
 
-          <template v-else-if="selectedBlock.type === 'drawing'">
+          <template v-else-if="selectedBlock.type === 'hotspot'">
             <label class="paper-field">
-              <span>提示语</span>
+              <span>提示语（可选）</span>
               <Input v-model:value="selectedBlock.props.prompt" />
             </label>
+            <div class="paper-rule-note">底图在创建题目时上传</div>
+          </template>
+
+          <template v-else-if="selectedBlock.type === 'classify'">
             <label class="paper-field">
-              <span>宽度</span>
+              <span>分类数</span>
+              <InputNumber
+                v-model:value="selectedBlock.props.binCount"
+                :min="2"
+                style="width: 100%"
+              />
+            </label>
+            <label class="paper-field">
+              <span>条目数</span>
+              <InputNumber
+                v-model:value="selectedBlock.props.itemCount"
+                :min="2"
+                style="width: 100%"
+              />
+            </label>
+            <div class="paper-rule-note">类名与条目在创建题目时填写</div>
+          </template>
+
+          <template v-else-if="selectedBlock.type === 'sorting'">
+            <label class="paper-field">
+              <span>条目数</span>
+              <InputNumber
+                v-model:value="selectedBlock.props.itemCount"
+                :min="2"
+                style="width: 100%"
+              />
+            </label>
+            <div class="paper-rule-note">条目文案在创建题目时填写</div>
+          </template>
+
+          <template v-else-if="selectedBlock.type === 'code'">
+            <label class="paper-field">
+              <span>默认语言</span>
+              <Input v-model:value="selectedBlock.props.language" />
+            </label>
+            <div class="paper-rule-note">起始代码可在创建题目时提供</div>
+          </template>
+
+          <template v-else-if="selectedBlock.type === 'drawing'">
+            <label class="paper-field">
+              <span>画布宽度</span>
               <InputNumber
                 v-model:value="selectedBlock.props.width"
                 :min="320"
@@ -718,7 +923,7 @@ onBeforeUnmount(() => {
               />
             </label>
             <label class="paper-field">
-              <span>高度</span>
+              <span>画布高度</span>
               <InputNumber
                 v-model:value="selectedBlock.props.height"
                 :min="240"
@@ -729,7 +934,7 @@ onBeforeUnmount(() => {
 
           <template v-else-if="selectedBlock.type === 'section'">
             <label class="paper-field">
-              <span>说明</span>
+              <span>说明（可选）</span>
               <Textarea
                 v-model:value="selectedBlock.props.description"
                 :rows="3"
@@ -973,6 +1178,127 @@ onBeforeUnmount(() => {
   padding: 12px;
 }
 
+.paper-face-html,
+.paper-face-shell {
+  min-height: 48px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: hsl(var(--muted-foreground));
+  background: #fffef8;
+  border: 1px dashed hsl(var(--border));
+  border-radius: 8px;
+}
+
+.paper-face-cloze,
+.paper-face-passage {
+  font-size: 15px;
+  line-height: 1.9;
+  color: #111827;
+}
+
+.paper-face-blanks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.paper-face-blank.pool {
+  color: #14532d;
+  background: #dcfce7;
+  border-color: #16a34a;
+}
+
+.paper-face-blank.local small,
+.paper-face-blank.pool small {
+  margin-left: 2px;
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+.paper-face-pool-box {
+  padding: 8px 10px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px dashed #86efac;
+  border-radius: 8px;
+}
+
+.paper-face-shell-line {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+
+.paper-face-blank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.8em;
+  padding: 0 8px;
+  margin: 0 3px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: #dbeafe;
+  border: 1px dashed #3b82f6;
+  border-radius: 999px;
+}
+
+.paper-face-bank,
+.paper-face-classify {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.paper-face-bank-item {
+  padding: 3px 8px;
+  font-size: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+}
+
+.paper-face-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.paper-face-option {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.paper-face-radio {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid #94a3b8;
+  border-radius: 50%;
+}
+
+.paper-face-media,
+.paper-face-write {
+  padding: 14px;
+  font-size: 14px;
+  color: #334155;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+}
+
+.paper-muted {
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+}
+
 .paper-block-html {
   font-size: 14px;
   line-height: 1.6;
@@ -1034,6 +1360,26 @@ onBeforeUnmount(() => {
   background: hsl(var(--background));
   border: 1px solid hsl(var(--border));
   border-radius: 12px;
+}
+
+.paper-demo-banner {
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+}
+
+.paper-rule-note {
+  padding: 8px 10px;
+  margin: 4px 0 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 40%);
+  border-radius: 8px;
 }
 
 @media (max-width: 1100px) {

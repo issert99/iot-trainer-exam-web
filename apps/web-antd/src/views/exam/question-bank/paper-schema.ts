@@ -1,24 +1,66 @@
 import type { BuilderComponent, JudgeMode } from './mock';
+import type { PassageProps, SlotBinding } from './passage-model';
 
 import { uid } from './mock';
+import {
+  applyBindingToAll,
+  createDefaultPassageProps,
+  fillPassageDemo,
+  passageToClozeConfig,
+  setDefaultOptionCount,
+  setPassageBlankCount,
+  syncPassageSlots,
+} from './passage-model';
 import {
   createEmptyTemplateDefinition,
   materializeTemplate,
 } from './template-schema';
 
-/** 卷面自由拼装 v2：一块画布树，无题型天花板 */
+export type {
+  PaperSlot,
+  PassagePool,
+  PassageProps,
+  SlotBinding,
+} from './passage-model';
+export {
+  addPassageBlank,
+  applyBindingToAll,
+  bindingToBlankType,
+  clozeMarkerIndexes,
+  clozeParts,
+  createDefaultPassageProps,
+  createDefaultPool,
+  fillPassageDemo,
+  insertBlankAtEnd,
+  passageDisplayText,
+  passageToClozeConfig,
+  removeLastPassageBlank,
+  setDefaultOptionCount,
+  setPassageBlankCount,
+  setSlotBinding,
+  SLOT_BINDING_OPTIONS,
+  syncPassageSlots,
+} from './passage-model';
+
+/** 卷面自由拼装：纸上物件，无题型天花板 */
 
 export type PaperBlockKind = 'content' | 'response' | 'structure';
 
 export type PaperBlockType =
+  | 'audio_record'
   | 'choice'
+  | 'classify'
+  | 'cloze'
   | 'code'
   | 'drawing'
   | 'formula'
+  | 'hotspot'
+  | 'listening'
   | 'matching'
   | 'media'
   | 'multi_choice'
   | 'number'
+  | 'passage'
   | 'section'
   | 'sorting'
   | 'stem'
@@ -26,6 +68,7 @@ export type PaperBlockType =
   | 'text_long'
   | 'text_short'
   | 'tip'
+  /** @deprecated 旧数据，解码时迁为 passage */
   | 'true_false';
 
 export type PaperScoring = {
@@ -43,7 +86,9 @@ export type PaperBlock = {
 };
 
 export type PaperDocument = {
+  /** template：只编骨架与规则；question：填入真实内容 */
   blocks: PaperBlock[];
+  role: 'question' | 'template';
   version: 2;
 };
 
@@ -66,29 +111,43 @@ export const PAPER_PALETTE: PaperPaletteItem[] = [
   {
     type: 'stem',
     kind: 'content',
-    label: '题干',
-    hint: '富文本题目说明',
+    label: '文本',
+    hint: '题干 / 说明',
     icon: 'lucide:file-text',
+  },
+  {
+    type: 'passage',
+    kind: 'response',
+    label: '挖空文',
+    hint: '文内插空，每空可自选怎么答',
+    icon: 'lucide:text-select',
   },
   {
     type: 'tip',
     kind: 'content',
     label: '提示',
-    hint: '考试说明 / 评分提示',
+    hint: '考试说明',
     icon: 'lucide:info',
   },
   {
     type: 'media',
     kind: 'content',
-    label: '媒体材料',
-    hint: '图片 / 音频 / 视频',
+    label: '图片/视频',
+    hint: '材料位',
     icon: 'lucide:image',
+  },
+  {
+    type: 'listening',
+    kind: 'content',
+    label: '音频',
+    hint: '可限次播放',
+    icon: 'lucide:headphones',
   },
   {
     type: 'choice',
     kind: 'response',
     label: '单选',
-    hint: '四选一等',
+    hint: '独立选择题',
     icon: 'lucide:circle-dot',
   },
   {
@@ -108,29 +167,29 @@ export const PAPER_PALETTE: PaperPaletteItem[] = [
   {
     type: 'text_short',
     kind: 'response',
-    label: '短填空',
-    hint: '一句话作答',
+    label: '短答',
+    hint: '独立短答区',
     icon: 'lucide:text-cursor-input',
   },
   {
     type: 'text_long',
     kind: 'response',
-    label: '简答论述',
-    hint: '长文本 / 人工阅',
+    label: '写作/长答',
+    hint: '长文本作答区',
     icon: 'lucide:align-left',
   },
   {
     type: 'number',
     kind: 'response',
     label: '数值',
-    hint: '数值 + 单位 + 容差',
+    hint: '数值 + 单位',
     icon: 'lucide:hash',
   },
   {
     type: 'formula',
     kind: 'response',
     label: '公式',
-    hint: 'LaTeX 作答',
+    hint: 'LaTeX',
     icon: 'lucide:sigma',
   },
   {
@@ -144,8 +203,15 @@ export const PAPER_PALETTE: PaperPaletteItem[] = [
     type: 'matching',
     kind: 'response',
     label: '匹配',
-    hint: '左右连线',
+    hint: '左右匹配 / 连线',
     icon: 'lucide:git-compare',
+  },
+  {
+    type: 'classify',
+    kind: 'response',
+    label: '分类',
+    hint: '拖入分类筐',
+    icon: 'lucide:layout-grid',
   },
   {
     type: 'sorting',
@@ -169,16 +235,30 @@ export const PAPER_PALETTE: PaperPaletteItem[] = [
     icon: 'lucide:pen-tool',
   },
   {
+    type: 'hotspot',
+    kind: 'response',
+    label: '图片标注',
+    hint: '热点 / 读图',
+    icon: 'lucide:crosshair',
+  },
+  {
+    type: 'audio_record',
+    kind: 'response',
+    label: '录音',
+    hint: '口语作答区',
+    icon: 'lucide:mic',
+  },
+  {
     type: 'section',
     kind: 'structure',
-    label: '子题组',
-    hint: '可嵌套子题',
+    label: '小题组',
+    hint: '下面挂多道小题',
     icon: 'lucide:layers',
   },
 ];
 
 export const PAPER_KIND_LABEL: Record<PaperBlockKind, string> = {
-  content: '内容',
+  content: '材料',
   response: '作答',
   structure: '结构',
 };
@@ -192,20 +272,96 @@ function defaultOptions() {
   ];
 }
 
+function migrateLegacyClozeProps(raw: Record<string, any>): PassageProps {
+  const interaction = String(
+    raw.blankInteraction || raw.blankType || 'shared_options',
+  );
+  let binding: SlotBinding = 'local_choice';
+  switch (interaction) {
+    case 'choice': {
+      binding = 'local_choice';
+      break;
+    }
+    case 'formula': {
+      binding = 'formula';
+      break;
+    }
+    case 'number': {
+      binding = 'number';
+      break;
+    }
+    case 'shared_options': {
+      binding = 'shared_pool';
+      break;
+    }
+    case 'text_short': {
+      binding = 'free_text';
+      break;
+    }
+  }
+  const count = Math.max(1, Number(raw.blankCount || 10));
+  const props = createDefaultPassageProps(binding, count);
+  props.title = raw.title || '挖空文';
+  props.text = raw.passage || raw.text || '';
+  if (raw.bankSize && props.pool) props.pool.size = Number(raw.bankSize);
+  if (raw.reuse && props.pool) props.pool.reuse = raw.reuse;
+  if (Array.isArray(raw.options) && props.pool) props.pool.items = raw.options;
+  syncPassageSlots(props);
+  return props;
+}
+
 export function createPaperBlock(type: PaperBlockType): PaperBlock {
   const id = uid('pb');
-  switch (type) {
+  const resolved = type === 'cloze' ? 'passage' : type;
+  switch (resolved) {
+    case 'audio_record': {
+      return {
+        id,
+        kind: 'response',
+        type: 'audio_record',
+        props: {
+          title: '口语录音',
+          tip: '',
+          maxSeconds: 120,
+        },
+        scoring: { score: 5, judgeMode: 'manual' },
+      };
+    }
     case 'choice': {
       return {
         id,
         kind: 'response',
-        type,
+        type: 'choice',
         props: {
-          title: '单选题',
-          options: defaultOptions(),
-          answer: ['A'],
+          title: '单选',
+          optionCount: 4,
+          options: [
+            { key: 'A', text: '' },
+            { key: 'B', text: '' },
+            { key: 'C', text: '' },
+            { key: 'D', text: '' },
+          ],
+          answer: [],
         },
         scoring: { score: 2, judgeMode: 'auto' },
+      };
+    }
+    case 'classify': {
+      return {
+        id,
+        kind: 'response',
+        type: 'classify',
+        props: {
+          title: '分类',
+          binCount: 2,
+          itemCount: 4,
+          bins: [
+            { id: 'B1', title: '' },
+            { id: 'B2', title: '' },
+          ],
+          items: [],
+        },
+        scoring: { score: 4, judgeMode: 'auto' },
       };
     }
     case 'code': {
@@ -216,7 +372,7 @@ export function createPaperBlock(type: PaperBlockType): PaperBlock {
         props: {
           title: '代码作答',
           language: 'python',
-          starterCode: '# 在此编写代码\n',
+          starterCode: '',
           languages: ['python', 'c', 'cpp', 'java', 'javascript', 'sql'],
         },
         scoring: { score: 10, judgeMode: 'manual' },
@@ -246,22 +402,44 @@ export function createPaperBlock(type: PaperBlockType): PaperBlock {
         scoring: { score: 3, judgeMode: 'manual' },
       };
     }
+    case 'hotspot': {
+      return {
+        id,
+        kind: 'response',
+        type,
+        props: {
+          title: '图片标注',
+          imageUrl: '',
+          prompt: '',
+          hotspots: [],
+        },
+        scoring: { score: 4, judgeMode: 'manual' },
+      };
+    }
+    case 'listening': {
+      return {
+        id,
+        kind: 'content',
+        type,
+        props: {
+          title: '音频材料',
+          mediaType: 'audio',
+          url: '',
+          maxPlays: 2,
+        },
+      };
+    }
     case 'matching': {
       return {
         id,
         kind: 'response',
         type,
         props: {
-          title: '匹配题',
-          left: [
-            { id: 'L1', text: '左侧 1' },
-            { id: 'L2', text: '左侧 2' },
-          ],
-          right: [
-            { id: 'R1', text: '右侧 1' },
-            { id: 'R2', text: '右侧 2' },
-          ],
-          answer: { L1: 'R1', L2: 'R2' },
+          title: '匹配',
+          pairCount: 4,
+          left: [],
+          right: [],
+          answer: {},
         },
         scoring: { score: 4, judgeMode: 'auto' },
       };
@@ -273,7 +451,7 @@ export function createPaperBlock(type: PaperBlockType): PaperBlock {
         type,
         props: {
           mediaType: 'image',
-          title: '媒体材料',
+          title: '图片/视频材料',
           url: '',
           maxPlays: 2,
         },
@@ -285,9 +463,15 @@ export function createPaperBlock(type: PaperBlockType): PaperBlock {
         kind: 'response',
         type,
         props: {
-          title: '多选题',
-          options: defaultOptions(),
-          answer: ['A', 'B'],
+          title: '多选',
+          optionCount: 4,
+          options: [
+            { key: 'A', text: '' },
+            { key: 'B', text: '' },
+            { key: 'C', text: '' },
+            { key: 'D', text: '' },
+          ],
+          answer: [],
         },
         scoring: { score: 2, judgeMode: 'auto' },
       };
@@ -306,6 +490,15 @@ export function createPaperBlock(type: PaperBlockType): PaperBlock {
         scoring: { score: 2, judgeMode: 'auto' },
       };
     }
+    case 'passage': {
+      return {
+        id,
+        kind: 'response',
+        type: 'passage',
+        props: createDefaultPassageProps('local_choice', 10),
+        scoring: { score: 10, judgeMode: 'auto' },
+      };
+    }
     case 'section': {
       return {
         id,
@@ -321,8 +514,9 @@ export function createPaperBlock(type: PaperBlockType): PaperBlock {
         kind: 'response',
         type,
         props: {
-          title: '排序题',
-          items: ['步骤一', '步骤二', '步骤三'],
+          title: '排序',
+          itemCount: 4,
+          items: [],
         },
         scoring: { score: 3, judgeMode: 'auto' },
       };
@@ -332,7 +526,7 @@ export function createPaperBlock(type: PaperBlockType): PaperBlock {
         id,
         kind: 'content',
         type,
-        props: { html: '<p>请输入题干内容</p>', title: '题干' },
+        props: { html: '', title: '材料/题干' },
       };
     }
     case 'table': {
@@ -344,7 +538,7 @@ export function createPaperBlock(type: PaperBlockType): PaperBlock {
           title: '表格填写',
           rows: 3,
           cols: 3,
-          headers: ['列1', '列2', '列3'],
+          headers: [],
         },
         scoring: { score: 4, judgeMode: 'manual' },
       };
@@ -355,11 +549,11 @@ export function createPaperBlock(type: PaperBlockType): PaperBlock {
         kind: 'response',
         type,
         props: {
-          title: '简答',
-          placeholder: '请输入论述内容',
+          title: '写作/长答',
+          placeholder: '',
           maxLength: 2000,
         },
-        scoring: { score: 5, judgeMode: 'manual' },
+        scoring: { score: 15, judgeMode: 'manual' },
       };
     }
     case 'text_short': {
@@ -368,8 +562,8 @@ export function createPaperBlock(type: PaperBlockType): PaperBlock {
         kind: 'response',
         type,
         props: {
-          title: '填空',
-          placeholder: '请输入答案',
+          title: '短答',
+          placeholder: '',
           maxLength: 200,
         },
         scoring: { score: 2, judgeMode: 'manual' },
@@ -380,7 +574,7 @@ export function createPaperBlock(type: PaperBlockType): PaperBlock {
         id,
         kind: 'content',
         type,
-        props: { html: '<p>提示信息</p>', title: '提示' },
+        props: { html: '', title: '提示' },
       };
     }
     case 'true_false': {
@@ -389,12 +583,12 @@ export function createPaperBlock(type: PaperBlockType): PaperBlock {
         kind: 'response',
         type,
         props: {
-          title: '判断题',
+          title: '判断',
           options: [
             { key: 'T', text: '正确' },
             { key: 'F', text: '错误' },
           ],
-          answer: ['T'],
+          answer: [],
         },
         scoring: { score: 1, judgeMode: 'auto' },
       };
@@ -405,52 +599,251 @@ export function createPaperBlock(type: PaperBlockType): PaperBlock {
 export function createEmptyPaperDocument(): PaperDocument {
   return {
     version: 2,
-    blocks: [createPaperBlock('stem'), createPaperBlock('choice')],
+    role: 'template',
+    blocks: [],
   };
 }
 
+/** 结构捷径：只铺空壳，可继续改 */
 export const PAPER_PRESETS: PaperPreset[] = [
   {
+    id: 'blank_paper',
+    label: '空白卷纸',
+    hint: '从零自己拼',
+    build: () => [],
+  },
+  {
+    id: 'local_cloze',
+    label: '挖空 · 每空选项',
+    hint: '传统完形：每空独立选项',
+    build: () => {
+      const block = createPaperBlock('passage');
+      applyBindingToAll(block.props as PassageProps, 'local_choice');
+      setPassageBlankCount(block.props as PassageProps, 20);
+      setDefaultOptionCount(block.props as PassageProps, 4);
+      block.props.title = '挖空文（每空选项）';
+      return [block];
+    },
+  },
+  {
+    id: 'banked_cloze',
+    label: '挖空 · 共享词库',
+    hint: '选词填空：空挂同一词库',
+    build: () => {
+      const block = createPaperBlock('passage');
+      applyBindingToAll(block.props as PassageProps, 'shared_pool');
+      setPassageBlankCount(block.props as PassageProps, 10);
+      if (block.props.pool) block.props.pool.size = 15;
+      block.props.title = '挖空文（共享词库）';
+      return [block];
+    },
+  },
+  {
     id: 'single_choice',
-    label: '单选快装',
-    hint: '题干 + 单选',
+    label: '文本 + 单选',
+    hint: '材料 + 一道单选',
     build: () => [createPaperBlock('stem'), createPaperBlock('choice')],
   },
   {
-    id: 'reading',
-    label: '阅读理解',
-    hint: '材料 + 子题组（两道单选）',
+    id: 'audio_objective',
+    label: '音频 + 小题组',
+    hint: '听力材料下挂客观题',
+    build: () => {
+      const section = createPaperBlock('section');
+      section.props.title = '根据音频作答';
+      section.children = [
+        createPaperBlock('choice'),
+        createPaperBlock('choice'),
+        createPaperBlock('choice'),
+      ];
+      return [createPaperBlock('listening'), section];
+    },
+  },
+  {
+    id: 'passage_objective',
+    label: '材料 + 小题组',
+    hint: '阅读理解式',
     build: () => {
       const section = createPaperBlock('section');
       section.props.title = '根据材料作答';
       section.children = [
         createPaperBlock('choice'),
         createPaperBlock('choice'),
+        createPaperBlock('choice'),
       ];
-      const media = createPaperBlock('stem');
-      media.props.title = '阅读材料';
-      media.props.html = '<p>在此粘贴阅读材料……</p>';
-      return [media, section];
+      return [createPaperBlock('stem'), section];
     },
   },
   {
-    id: 'mixed',
-    label: '综合题',
-    hint: '题干 + 选择 + 简答 + 绘图',
-    build: () => [
-      createPaperBlock('stem'),
-      createPaperBlock('choice'),
-      createPaperBlock('text_long'),
-      createPaperBlock('drawing'),
-    ],
+    id: 'matching_block',
+    label: '匹配',
+    hint: '说明 + 匹配',
+    build: () => [createPaperBlock('stem'), createPaperBlock('matching')],
+  },
+  {
+    id: 'writing_block',
+    label: '写作/长答',
+    hint: '材料 + 长文本',
+    build: () => [createPaperBlock('stem'), createPaperBlock('text_long')],
+  },
+  {
+    id: 'case_series',
+    label: '案例串题',
+    hint: '材料 + 多问',
+    build: () => {
+      const section = createPaperBlock('section');
+      section.props.title = '根据案例作答';
+      section.children = [
+        createPaperBlock('choice'),
+        createPaperBlock('choice'),
+        createPaperBlock('text_short'),
+      ];
+      return [createPaperBlock('stem'), section];
+    },
   },
   {
     id: 'coding',
-    label: '编程题',
-    hint: '题干 + 代码编辑器',
+    label: '编程作答',
+    hint: '材料 + 代码',
     build: () => [createPaperBlock('stem'), createPaperBlock('code')],
   },
 ];
+
+/** @deprecated 兼容旧调用 */
+export function clozeDisplayCount(props: Record<string, any>) {
+  if (Array.isArray(props.slots) && props.slots.length > 0) {
+    return props.slots.length;
+  }
+  if (props.blankCountMode === 'range') {
+    return Math.max(1, Number(props.blankMin || props.blankCount || 1));
+  }
+  return Math.max(1, Number(props.blankCount || props.slots?.length || 1));
+}
+
+/** 按 optionCount 同步空壳选项（模板侧不写选项文案） */
+export function syncChoiceOptionShells(props: Record<string, any>) {
+  const count = Math.max(2, Number(props.optionCount || 4));
+  props.optionCount = count;
+  const previous = Array.isArray(props.options) ? props.options : [];
+  props.options = Array.from({ length: count }, (_, index) => ({
+    key: previous[index]?.key || String.fromCodePoint(65 + index),
+    text: previous[index]?.text || '',
+  }));
+  return props;
+}
+
+/** 用占位假数据生成预览，不写回模板 */
+export function fillDemoContent(document: PaperDocument): PaperDocument {
+  // eslint-disable-next-line unicorn/prefer-structured-clone
+  const cloned = JSON.parse(JSON.stringify(document)) as PaperDocument;
+  cloned.role = 'question';
+
+  const fill = (block: PaperBlock) => {
+    switch (block.type) {
+      case 'audio_record': {
+        block.props.tip = block.props.tip || '（示例）请开始录音作答';
+        break;
+      }
+      case 'choice':
+      case 'multi_choice': {
+        const count = Math.max(
+          2,
+          Number(block.props.optionCount || block.props.options?.length || 4),
+        );
+        block.props.options = Array.from({ length: count }, (_, index) => ({
+          key: String.fromCodePoint(65 + index),
+          text:
+            block.props.options?.[index]?.text ||
+            `示例选项 ${String.fromCodePoint(65 + index)}`,
+        }));
+        break;
+      }
+      case 'classify': {
+        const binCount = Math.max(2, Number(block.props.binCount || 2));
+        const itemCount = Math.max(3, Number(block.props.itemCount || 4));
+        block.props.bins = Array.from({ length: binCount }, (_, index) => ({
+          id: `B${index + 1}`,
+          title: `类别 ${index + 1}`,
+        }));
+        block.props.items = Array.from(
+          { length: itemCount },
+          (_, index) => `条目 ${index + 1}`,
+        );
+        break;
+      }
+      case 'cloze':
+      case 'passage': {
+        const props =
+          block.type === 'cloze' || !block.props.slots
+            ? migrateLegacyClozeProps(block.props)
+            : (block.props as PassageProps);
+        const filled = fillPassageDemo(props);
+        Object.assign(block.props, filled);
+        block.type = 'passage';
+        break;
+      }
+      case 'code': {
+        block.props.starterCode = block.props.starterCode || '# 示例起始代码\n';
+        break;
+      }
+      case 'hotspot': {
+        block.props.prompt = block.props.prompt || '（示例）请标注图中位置';
+        break;
+      }
+      case 'listening':
+      case 'media': {
+        if (!block.props.url) {
+          block.props.url = '';
+        }
+        break;
+      }
+      case 'matching': {
+        const count = Math.max(2, Number(block.props.pairCount || 3));
+        block.props.left = Array.from({ length: count }, (_, index) => ({
+          id: `L${index + 1}`,
+          text: `左项 ${index + 1}`,
+        }));
+        block.props.right = Array.from({ length: count }, (_, index) => ({
+          id: `R${index + 1}`,
+          text: `右项 ${index + 1}`,
+        }));
+        break;
+      }
+      case 'sorting': {
+        const count = Math.max(3, Number(block.props.itemCount || 4));
+        block.props.items = Array.from(
+          { length: count },
+          (_, index) => `步骤 ${index + 1}`,
+        );
+        break;
+      }
+      case 'stem':
+      case 'tip': {
+        if (!block.props.html) {
+          block.props.html = `<p>（示例）${paperBlockLabel(block)}内容，创建题目时由出题人填写。</p>`;
+        }
+        break;
+      }
+      case 'text_long':
+      case 'text_short': {
+        block.props.placeholder =
+          block.props.placeholder || '（示例）请在此作答';
+        break;
+      }
+      default: {
+        break;
+      }
+    }
+    block.children?.forEach((child) => fill(child));
+  };
+
+  cloned.blocks.forEach((block) => fill(block));
+  return cloned;
+}
+
+export function paperForDemoPreview(document: PaperDocument) {
+  return paperToBuilderComponents(fillDemoContent(document));
+}
 
 export function clonePaperBlock(block: PaperBlock): PaperBlock {
   // eslint-disable-next-line unicorn/prefer-structured-clone
@@ -515,6 +908,19 @@ function mapBlockToBuilder(block: PaperBlock): BuilderComponent {
   const label = paperBlockLabel(block);
 
   switch (block.type) {
+    case 'audio_record': {
+      return {
+        id: block.id,
+        type: 'audio_record',
+        label,
+        score,
+        judgeMode,
+        config: {
+          tip: block.props.tip || '',
+          maxSeconds: block.props.maxSeconds ?? 120,
+        },
+      };
+    }
     case 'choice':
     case 'multi_choice':
     case 'true_false': {
@@ -529,6 +935,35 @@ function mapBlockToBuilder(block: PaperBlock): BuilderComponent {
           options: block.props.options || defaultOptions(),
           answer: block.props.answer || [],
         },
+      };
+    }
+    case 'classify': {
+      return {
+        id: block.id,
+        type: 'sorting',
+        label,
+        score,
+        judgeMode,
+        config: {
+          mode: 'classify',
+          bins: block.props.bins || [],
+          items: block.props.items || [],
+        },
+      };
+    }
+    case 'cloze':
+    case 'passage': {
+      const passageProps =
+        block.type === 'passage' && Array.isArray(block.props.slots)
+          ? (block.props as PassageProps)
+          : migrateLegacyClozeProps(block.props);
+      return {
+        id: block.id,
+        type: 'cloze',
+        label,
+        score,
+        judgeMode,
+        config: passageToClozeConfig(passageProps),
       };
     }
     case 'code': {
@@ -570,6 +1005,38 @@ function mapBlockToBuilder(block: PaperBlock): BuilderComponent {
         config: { latex: block.props.latex || '' },
       };
     }
+    case 'hotspot': {
+      return {
+        id: block.id,
+        type: 'image_hotspot',
+        label,
+        score,
+        judgeMode,
+        config: {
+          imageUrl: block.props.imageUrl || '',
+          prompt: block.props.prompt || '',
+          hotspots: block.props.hotspots || [],
+        },
+      };
+    }
+    case 'listening':
+    case 'media': {
+      return {
+        id: block.id,
+        type: 'media_player',
+        label,
+        score: 0,
+        judgeMode: 'none',
+        config: {
+          mediaType:
+            block.type === 'listening'
+              ? 'audio'
+              : block.props.mediaType || 'image',
+          url: block.props.url || '',
+          maxPlays: block.props.maxPlays ?? 2,
+        },
+      };
+    }
     case 'matching': {
       return {
         id: block.id,
@@ -581,20 +1048,6 @@ function mapBlockToBuilder(block: PaperBlock): BuilderComponent {
           left: block.props.left || [],
           right: block.props.right || [],
           answer: block.props.answer || {},
-        },
-      };
-    }
-    case 'media': {
-      return {
-        id: block.id,
-        type: 'media_player',
-        label,
-        score: 0,
-        judgeMode: 'none',
-        config: {
-          mediaType: block.props.mediaType || 'image',
-          url: block.props.url || '',
-          maxPlays: block.props.maxPlays ?? 2,
         },
       };
     }
@@ -699,6 +1152,19 @@ function mapBuilderToBlock(component: BuilderComponent): PaperBlock {
       : { score: component.score, judgeMode: component.judgeMode };
 
   switch (component.type) {
+    case 'audio_record': {
+      return {
+        id: component.id,
+        kind: 'response',
+        type: 'audio_record',
+        props: {
+          title: component.label,
+          tip: component.config.tip || '',
+          maxSeconds: component.config.maxSeconds ?? 120,
+        },
+        scoring,
+      };
+    }
     case 'canvas': {
       return {
         id: component.id,
@@ -711,6 +1177,64 @@ function mapBuilderToBlock(component: BuilderComponent): PaperBlock {
           height: component.config.height || 720,
           prompt: component.config.prompt || '',
         },
+        scoring,
+      };
+    }
+    case 'cloze': {
+      const props = migrateLegacyClozeProps({
+        title: component.label,
+        passage: component.config.passage || '',
+        blankType: component.config.blankType || 'shared_options',
+        blankInteraction:
+          component.config.blankInteraction ||
+          component.config.blankType ||
+          'shared_options',
+        blankCount: component.config.blankCount || 1,
+        bankSize: component.config.bankSize || component.config.poolSize || 15,
+        blanks: component.config.blanks || [],
+        options: component.config.options || [],
+        reuse: component.config.reuse || 'once',
+      });
+      // 若 blanks 带 per-blank type，尽量还原
+      if (Array.isArray(component.config.blanks)) {
+        for (const blank of component.config.blanks) {
+          const slot = props.slots.find((item) => item.marker === blank.marker);
+          if (!slot) continue;
+          const t = blank.type || component.config.blankType;
+          switch (t) {
+            case 'choice': {
+              slot.binding = 'local_choice';
+              break;
+            }
+            case 'formula': {
+              slot.binding = 'formula';
+              break;
+            }
+            case 'number': {
+              slot.binding = 'number';
+              break;
+            }
+            case 'shared_options': {
+              slot.binding = 'shared_pool';
+              break;
+            }
+            case 'text_short': {
+              slot.binding = 'free_text';
+              break;
+            }
+          }
+          if (blank.options) {
+            slot.options = blank.options;
+            slot.optionCount = blank.options.length;
+          }
+        }
+        syncPassageSlots(props);
+      }
+      return {
+        id: component.id,
+        kind: 'response',
+        type: 'passage',
+        props,
         scoring,
       };
     }
@@ -751,6 +1275,20 @@ function mapBuilderToBlock(component: BuilderComponent): PaperBlock {
         ),
       };
     }
+    case 'image_hotspot': {
+      return {
+        id: component.id,
+        kind: 'response',
+        type: 'hotspot',
+        props: {
+          title: component.label,
+          imageUrl: component.config.imageUrl || '',
+          prompt: component.config.prompt || '',
+          hotspots: component.config.hotspots || [],
+        },
+        scoring,
+      };
+    }
     case 'matching': {
       return {
         id: component.id,
@@ -766,13 +1304,14 @@ function mapBuilderToBlock(component: BuilderComponent): PaperBlock {
       };
     }
     case 'media_player': {
+      const isAudio = component.config.mediaType === 'audio';
       return {
         id: component.id,
         kind: 'content',
-        type: 'media',
+        type: isAudio ? 'listening' : 'media',
         props: {
-          title: component.label || '媒体材料',
-          mediaType: component.config.mediaType || 'audio',
+          title: component.label || (isAudio ? '听力材料' : '媒体材料'),
+          mediaType: component.config.mediaType || 'image',
           url: component.config.url || '',
           maxPlays: component.config.maxPlays ?? 2,
         },
@@ -809,6 +1348,19 @@ function mapBuilderToBlock(component: BuilderComponent): PaperBlock {
       };
     }
     case 'sorting': {
+      if (component.config.mode === 'classify') {
+        return {
+          id: component.id,
+          kind: 'response',
+          type: 'classify',
+          props: {
+            title: component.label,
+            bins: component.config.bins || [],
+            items: component.config.items || [],
+          },
+          scoring,
+        };
+      }
       return {
         id: component.id,
         kind: 'response',
@@ -883,6 +1435,7 @@ export function builderComponentsToPaper(
   if (usable.length === 0) return createEmptyPaperDocument();
   return {
     version: 2,
+    role: 'template',
     blocks: usable.map((item) => mapBuilderToBlock(item)),
   };
 }
@@ -905,6 +1458,31 @@ export function encodePaperDocument(
   ];
 }
 
+function normalizePaperBlocks(blocks: PaperBlock[]): PaperBlock[] {
+  return blocks.map((block) => {
+    if (
+      block.type === 'cloze' ||
+      (block.type === 'passage' && !block.props.slots)
+    ) {
+      return {
+        ...block,
+        type: 'passage',
+        props: migrateLegacyClozeProps(block.props),
+        children: block.children
+          ? normalizePaperBlocks(block.children)
+          : undefined,
+      };
+    }
+    if (block.children?.length) {
+      return {
+        ...block,
+        children: normalizePaperBlocks(block.children),
+      };
+    }
+    return block;
+  });
+}
+
 export function decodePaperDocument(raw: unknown): PaperDocument {
   const list = Array.isArray(raw) ? raw : [];
   const stored = list.find(
@@ -917,7 +1495,10 @@ export function decodePaperDocument(raw: unknown): PaperDocument {
   const paper = stored?.config?.paper as PaperDocument | undefined;
   if (paper?.version === 2 && Array.isArray(paper.blocks)) {
     // eslint-disable-next-line unicorn/prefer-structured-clone
-    return JSON.parse(JSON.stringify(paper)) as PaperDocument;
+    const cloned = JSON.parse(JSON.stringify(paper)) as PaperDocument;
+    cloned.role = cloned.role || 'template';
+    cloned.blocks = normalizePaperBlocks(cloned.blocks);
+    return cloned;
   }
 
   if (stored?.config?.definition?.version === 1) {

@@ -167,6 +167,16 @@ function clozeUsesSharedOptions(config: BuilderComponent['config']) {
     )
   );
 }
+
+function fillNextClozeBlank(componentId: string, value: string) {
+  const list = answers[componentId];
+  if (!Array.isArray(list)) return;
+  const index = list.findIndex(
+    (item) => item === undefined || item === null || item === '',
+  );
+  if (index === -1) return;
+  list[index] = value;
+}
 </script>
 
 <template>
@@ -307,13 +317,16 @@ function clozeUsesSharedOptions(config: BuilderComponent['config']) {
             </template>
           </div>
           <div v-if="clozeUsesSharedOptions(comp.config)" class="qb-cloze-pool">
-            <span
+            <span class="qb-cloze-pool-label">词库（点击填入空位）</span>
+            <button
               v-for="item in comp.config.options || []"
               :key="item.key"
               class="qb-cloze-option"
+              type="button"
+              @click="fillNextClozeBlank(comp.id, item.key)"
             >
               {{ item.key }}. {{ item.text }}
-            </span>
+            </button>
           </div>
         </section>
 
@@ -398,29 +411,54 @@ function clozeUsesSharedOptions(config: BuilderComponent['config']) {
         </section>
 
         <section v-else-if="comp.type === 'sorting'" class="qb-section">
-          <div class="qb-sort-tip">点击上下箭头调整顺序</div>
-          <div
-            v-for="(item, i) in answers[comp.id] || []"
-            :key="`${comp.id}-${i}-${item}`"
-            class="qb-sort-item"
-          >
-            <span class="qb-sort-idx">{{ Number(i) + 1 }}.</span>
-            <span class="qb-sort-text">{{ item }}</span>
-            <Button
-              size="small"
-              :disabled="Number(i) === 0"
-              @click="moveSort(comp.id, Number(i), -1)"
+          <template v-if="comp.config.mode === 'classify'">
+            <div class="qb-classify">
+              <div class="qb-classify-items">
+                <span
+                  v-for="item in comp.config.items || []"
+                  :key="item"
+                  class="qb-classify-chip"
+                >
+                  {{ item }}
+                </span>
+              </div>
+              <div class="qb-classify-bins">
+                <div
+                  v-for="bin in comp.config.bins || []"
+                  :key="bin.id || bin.title"
+                  class="qb-classify-bin"
+                >
+                  <strong>{{ bin.title }}</strong>
+                  <div class="qb-classify-bin-drop">拖入此类</div>
+                </div>
+              </div>
+            </div>
+          </template>
+          <template v-else>
+            <div class="qb-sort-tip">点击上下箭头调整顺序</div>
+            <div
+              v-for="(item, i) in answers[comp.id] || []"
+              :key="`${comp.id}-${i}-${item}`"
+              class="qb-sort-item"
             >
-              上移
-            </Button>
-            <Button
-              size="small"
-              :disabled="Number(i) === (answers[comp.id]?.length || 0) - 1"
-              @click="moveSort(comp.id, Number(i), 1)"
-            >
-              下移
-            </Button>
-          </div>
+              <span class="qb-sort-idx">{{ Number(i) + 1 }}.</span>
+              <span class="qb-sort-text">{{ item }}</span>
+              <Button
+                size="small"
+                :disabled="Number(i) === 0"
+                @click="moveSort(comp.id, Number(i), -1)"
+              >
+                上移
+              </Button>
+              <Button
+                size="small"
+                :disabled="Number(i) === (answers[comp.id]?.length || 0) - 1"
+                @click="moveSort(comp.id, Number(i), 1)"
+              >
+                下移
+              </Button>
+            </div>
+          </template>
         </section>
 
         <section v-else-if="comp.type === 'audio_record'" class="qb-section">
@@ -741,7 +779,8 @@ function clozeUsesSharedOptions(config: BuilderComponent['config']) {
 .qb-cloze-pool {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 16px;
+  gap: 8px;
+  align-items: center;
   padding: 12px;
   margin-top: 14px;
   background: hsl(var(--muted) / 30%);
@@ -749,8 +788,59 @@ function clozeUsesSharedOptions(config: BuilderComponent['config']) {
   border-radius: 8px;
 }
 
+.qb-cloze-pool-label {
+  width: 100%;
+  margin-bottom: 2px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+
 .qb-cloze-option {
+  padding: 4px 10px;
   font-size: 13px;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+}
+
+.qb-cloze-option:hover {
+  color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+}
+
+.qb-classify {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.qb-classify-items,
+.qb-classify-bins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.qb-classify-chip {
+  padding: 6px 10px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+}
+
+.qb-classify-bin {
+  min-width: 140px;
+  padding: 10px;
+  background: hsl(var(--muted) / 25%);
+  border: 1px dashed hsl(var(--border));
+  border-radius: 10px;
+}
+
+.qb-classify-bin-drop {
+  margin-top: 8px;
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
 }
 
 .qb-media {

@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { PaperDocument } from '../paper-schema';
+import type { TemplateDocument } from '../template-document';
 import type { TemplateScopeType } from '../template-schema';
 
 import type { QbTemplate } from '#/api/core';
@@ -13,14 +13,12 @@ import {
   Button,
   Card,
   Empty,
-  Form,
   Input,
   message,
   Modal,
   Select,
   Space,
   Spin,
-  Tag,
   Tree,
 } from 'ant-design-vue';
 
@@ -32,13 +30,13 @@ import {
   updateQbTemplateApi,
 } from '#/api/core';
 
-import PaperCanvasDesigner from '../components/PaperCanvasDesigner.vue';
+import EmptyQuestionTemplateEditor from '../components/EmptyQuestionTemplateEditor.vue';
+import { createEmptyTemplateDocument } from '../template-document';
 import {
-  createEmptyPaperDocument,
-  decodePaperDocument,
-  encodePaperDocument,
-  paperSummary,
-} from '../paper-schema';
+  decodeTemplateDocument,
+  encodeTemplateDocumentCompatible,
+  templateSummary as summarizeTemplateDoc,
+} from '../template-document.bridge';
 import { formatTemplateScope, parseTemplateScope } from '../template-schema';
 
 defineOptions({ name: 'QuestionTemplates' });
@@ -66,9 +64,9 @@ const orgOptions = ref<OrgOptions>({
 
 const form = reactive<{
   description: string;
+  document: TemplateDocument;
   id: string;
   name: string;
-  paper: PaperDocument;
   scopeId: string;
   scopeType: TemplateScopeType;
 }>({
@@ -77,7 +75,7 @@ const form = reactive<{
   description: '',
   scopeType: 'public',
   scopeId: '',
-  paper: createEmptyPaperDocument(),
+  document: createEmptyTemplateDocument(),
 });
 
 const treeData = computed<TreeNode[]>(() => [
@@ -210,7 +208,7 @@ async function openCreate() {
   form.id = '';
   form.name = '';
   form.description = '';
-  form.paper = createEmptyPaperDocument();
+  form.document = createEmptyTemplateDocument();
   resetFormScope();
   view.value = 'edit';
   await nextTick();
@@ -223,7 +221,7 @@ async function openEdit(row: QbTemplate) {
   form.description = row.description || '';
   form.scopeType = scope.type;
   form.scopeId = scope.id;
-  form.paper = decodePaperDocument(row.components);
+  form.document = decodeTemplateDocument(row.components);
   view.value = 'edit';
   await nextTick();
 }
@@ -239,8 +237,8 @@ async function saveTemplate() {
     message.warning('请填写模板名称');
     return;
   }
-  if (paperSummary(form.paper).responseCount === 0) {
-    message.warning('请至少添加一个作答组件');
+  if (summarizeTemplateDoc(form.document).scoredCount === 0) {
+    message.warning('请至少添加一处作答（挖空/选择题等）');
     return;
   }
   if (form.scopeType !== 'public' && !form.scopeId) {
@@ -253,12 +251,12 @@ async function saveTemplate() {
       name: form.name.trim(),
       description: form.description.trim(),
       scope: formatTemplateScope(form.scopeType, form.scopeId),
-      components: encodePaperDocument(form.paper),
+      components: encodeTemplateDocumentCompatible(form.document),
     };
     await (form.id
       ? updateQbTemplateApi(form.id, payload)
       : createQbTemplateApi(payload));
-    message.success('卷面模板已保存');
+    message.success('题目模板已保存');
     view.value = 'list';
     await loadData();
   } catch {
@@ -281,11 +279,9 @@ function removeTemplate(row: QbTemplate) {
 }
 
 function templateSummary(row: QbTemplate) {
-  const paper = decodePaperDocument(row.components);
-  const summary = paperSummary(paper);
+  const doc = decodeTemplateDocument(row.components);
   return {
-    paper,
-    structure: summary.label,
+    structure: summarizeTemplateDoc(doc).label,
   };
 }
 
@@ -312,10 +308,9 @@ onMounted(loadData);
 </script>
 
 <template>
-  <Page auto-content-height content-class="h-full">
+  <Page auto-content-height content-class="h-full p-3">
     <div v-if="view === 'list'" class="tpl-library">
       <Card class="tpl-tree-card" :bordered="false">
-        <div class="tpl-tree-title">模板归属</div>
         <Tree
           v-model:expanded-keys="expandedTreeKeys"
           :selected-keys="[selectedTreeKey]"
@@ -325,18 +320,18 @@ onMounted(loadData);
         />
       </Card>
 
-      <Card class="tpl-list-card" :bordered="false">
-        <div class="tpl-list-head">
-          <div>
+      <section class="tpl-main">
+        <header class="tpl-main-head">
+          <div class="tpl-main-title">
             <h2>{{ selectedNodeTitle }}</h2>
-            <p>管理卷面模板，用于快速创建题目。</p>
+            <p>管理可复用的空题模具，用于快速出题</p>
           </div>
-          <Space>
+          <div class="tpl-main-tools">
             <Input
               v-model:value="keyword"
               allow-clear
               placeholder="搜索模板"
-              style="width: 220px"
+              class="tpl-search"
             />
             <Button type="primary" @click="openCreate">
               <template #icon>
@@ -344,95 +339,89 @@ onMounted(loadData);
               </template>
               新建模板
             </Button>
-          </Space>
-        </div>
-
-        <Spin :spinning="loading">
-          <div v-if="filteredTemplates.length > 0" class="tpl-grid">
-            <article
-              v-for="row in filteredTemplates"
-              :key="row.id"
-              class="tpl-card"
-            >
-              <div class="tpl-card-head">
-                <span class="tpl-card-icon">
-                  <IconifyIcon icon="lucide:layout-template" />
-                </span>
-                <div class="tpl-card-title">
-                  <strong>{{ row.name }}</strong>
-                  <span>{{ row.description || '暂无说明' }}</span>
-                </div>
-              </div>
-              <div class="tpl-tags">
-                <Tag color="blue">{{ templateSummary(row).structure }}</Tag>
-                <Tag>{{ scopeLabel(row.scope) }}</Tag>
-                <Tag color="processing">自定义</Tag>
-              </div>
-              <div class="tpl-card-actions">
-                <span>{{ row.updated_at || '' }}</span>
-                <Space>
-                  <Button type="link" size="small" @click="openEdit(row)">
-                    编辑卷面
-                  </Button>
-                  <Button
-                    type="link"
-                    size="small"
-                    danger
-                    @click="removeTemplate(row)"
-                  >
-                    删除
-                  </Button>
-                </Space>
-              </div>
-            </article>
           </div>
-          <Empty v-else description="当前节点暂无模板" />
-        </Spin>
-      </Card>
+        </header>
+
+        <div class="tpl-main-body">
+          <Spin :spinning="loading" class="tpl-spin">
+            <div v-if="filteredTemplates.length > 0" class="tpl-grid">
+              <article
+                v-for="row in filteredTemplates"
+                :key="row.id"
+                class="tpl-card"
+                @click="openEdit(row)"
+              >
+                <div class="tpl-card-top">
+                  <span class="tpl-card-icon">
+                    <IconifyIcon icon="lucide:layout-template" />
+                  </span>
+                  <div class="tpl-card-copy">
+                    <strong>{{ row.name }}</strong>
+                    <p>{{ row.description || '暂无说明' }}</p>
+                  </div>
+                </div>
+                <div class="tpl-meta">
+                  <span>{{ templateSummary(row).structure }}</span>
+                  <span>{{ scopeLabel(row.scope) }}</span>
+                </div>
+                <div class="tpl-card-foot" @click.stop>
+                  <time>{{ row.updated_at || '—' }}</time>
+                  <div class="tpl-card-actions">
+                    <button type="button" @click="openEdit(row)">编辑</button>
+                    <button
+                      type="button"
+                      class="danger"
+                      @click="removeTemplate(row)"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div v-else class="tpl-empty">
+              <Empty description="当前归属下还没有模板">
+                <Button type="primary" @click="openCreate">新建模板</Button>
+              </Empty>
+            </div>
+          </Spin>
+        </div>
+      </section>
     </div>
 
     <div v-else class="tpl-editor">
-      <div class="tpl-editor-head">
+      <header class="tpl-editor-head">
         <div>
-          <h2>{{ form.id ? '编辑卷面模板' : '新建卷面模板' }}</h2>
+          <h2>{{ form.id ? '编辑模板' : '新建模板' }}</h2>
+          <p>中间是空题模具，点哪里改哪里</p>
         </div>
         <Space>
           <Button @click="backToList">返回</Button>
           <Button type="primary" :loading="saving" @click="saveTemplate">
-            保存模板
+            保存
           </Button>
         </Space>
+      </header>
+
+      <div class="tpl-name-row">
+        <Input
+          v-model:value="form.name"
+          placeholder="模板名称"
+          class="tpl-name-input"
+        />
+        <Select
+          :value="formatTemplateScope(form.scopeType, form.scopeId)"
+          :options="scopeOptions"
+          show-search
+          option-filter-prop="label"
+          class="tpl-scope-select"
+          @update:value="onScopeChange"
+        />
       </div>
 
-      <Card class="tpl-meta-card" :bordered="false">
-        <Form layout="vertical">
-          <div class="tpl-meta-grid">
-            <Form.Item label="模板名称" required>
-              <Input
-                v-model:value="form.name"
-                placeholder="例如：综合阅读 + 画图说明"
-              />
-            </Form.Item>
-            <Form.Item label="保存位置" required>
-              <Select
-                :value="formatTemplateScope(form.scopeType, form.scopeId)"
-                :options="scopeOptions"
-                show-search
-                option-filter-prop="label"
-                @update:value="onScopeChange"
-              />
-            </Form.Item>
-          </div>
-          <Form.Item label="用途说明">
-            <Input
-              v-model:value="form.description"
-              placeholder="说明这个卷面模板适合什么场景"
-            />
-          </Form.Item>
-        </Form>
-      </Card>
-
-      <PaperCanvasDesigner v-model="form.paper" />
+      <div class="tpl-editor-body">
+        <EmptyQuestionTemplateEditor v-model="form.document" />
+      </div>
     </div>
   </Page>
 </template>
@@ -440,75 +429,120 @@ onMounted(loadData);
 <style scoped>
 .tpl-library {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: 272px minmax(0, 1fr);
+  gap: 12px;
   height: 100%;
   min-height: 0;
 }
 
-.tpl-tree-card,
-.tpl-list-card,
-.tpl-meta-card {
+.tpl-tree-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
+  border-radius: 8px;
 }
 
-.tpl-tree-card {
+.tpl-tree-card :deep(.ant-card-body) {
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
   overflow: auto;
 }
 
-.tpl-tree-title {
-  padding-bottom: 12px;
-  margin-bottom: 12px;
-  font-weight: 600;
+.tpl-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+}
+
+.tpl-main-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px 14px;
   border-bottom: 1px solid hsl(var(--border));
 }
 
-.tpl-list-card {
-  min-width: 0;
-  overflow: auto;
-}
-
-.tpl-list-head,
-.tpl-editor-head {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 18px;
-}
-
-.tpl-list-head h2,
-.tpl-editor-head h2 {
+.tpl-main-title h2 {
   margin: 0;
   font-size: 18px;
+  font-weight: 650;
+  color: hsl(var(--foreground));
 }
 
-.tpl-list-head p,
-.tpl-editor-head p {
+.tpl-main-title p {
   margin: 4px 0 0;
   font-size: 13px;
   color: hsl(var(--muted-foreground));
 }
 
+.tpl-main-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.tpl-search {
+  width: 220px;
+}
+
+.tpl-main-body {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 18px 18px;
+  overflow: auto;
+  background: hsl(var(--card));
+}
+
+.tpl-spin {
+  display: block;
+  min-height: 240px;
+}
+
 .tpl-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(240px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  align-content: start;
 }
 
 .tpl-card {
   display: flex;
   flex-direction: column;
-  min-height: 180px;
-  padding: 16px;
+  gap: 12px;
+  min-height: 156px;
+  padding: 14px;
+  cursor: pointer;
   background: hsl(var(--background));
   border: 1px solid hsl(var(--border));
   border-radius: 10px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
-.tpl-card-head {
+.tpl-card:hover {
+  border-color: hsl(var(--primary) / 45%);
+  box-shadow: 0 8px 20px hsl(var(--foreground) / 5%);
+}
+
+.tpl-card-top {
   display: flex;
   gap: 12px;
+  align-items: flex-start;
 }
 
 .tpl-card-icon {
@@ -516,44 +550,105 @@ onMounted(loadData);
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
+  font-size: 17px;
   color: hsl(var(--primary));
-  background: hsl(var(--primary) / 8%);
-  border-radius: 8px;
+  background: hsl(var(--primary) / 10%);
+  border-radius: 9px;
 }
 
-.tpl-card-title {
-  display: flex;
-  flex-direction: column;
+.tpl-card-copy {
   min-width: 0;
 }
 
-.tpl-card-title span {
-  margin-top: 4px;
+.tpl-card-copy strong {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 12px;
-  color: hsl(var(--muted-foreground));
+  font-size: 15px;
+  font-weight: 650;
   white-space: nowrap;
 }
 
-.tpl-tags {
+.tpl-card-copy p {
+  display: -webkit-box;
+  margin: 4px 0 0;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  font-size: 12px;
+  line-height: 1.45;
+  color: hsl(var(--muted-foreground));
+  -webkit-box-orient: vertical;
+}
+
+.tpl-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 16px;
+}
+
+.tpl-meta span {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: hsl(var(--foreground) / 75%);
+  background: hsl(var(--muted) / 45%);
+  border-radius: 999px;
+}
+
+.tpl-card-foot {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  margin-top: auto;
+  border-top: 1px solid hsl(var(--border));
+}
+
+.tpl-card-foot time {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
 }
 
 .tpl-card-actions {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: 12px;
-  margin-top: auto;
+  gap: 4px;
+}
+
+.tpl-card-actions button {
+  height: 28px;
+  padding: 0 8px;
   font-size: 12px;
-  color: hsl(var(--muted-foreground));
-  border-top: 1px solid hsl(var(--border));
+  font-weight: 500;
+  color: hsl(var(--primary));
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+
+.tpl-card-actions button:hover {
+  background: hsl(var(--primary) / 8%);
+}
+
+.tpl-card-actions button.danger {
+  color: hsl(var(--destructive));
+}
+
+.tpl-card-actions button.danger:hover {
+  background: hsl(var(--destructive) / 8%);
+}
+
+.tpl-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: min(380px, 100%);
+  padding: 32px 16px;
+  border: 1px dashed hsl(var(--border));
+  border-radius: 10px;
 }
 
 .tpl-editor {
@@ -561,38 +656,65 @@ onMounted(loadData);
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  padding: 12px 14px 14px;
   overflow: hidden;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
 }
 
-.tpl-meta-card {
-  flex: none;
-  margin-bottom: 16px;
+.tpl-editor-head {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid hsl(var(--border));
 }
 
-.tpl-editor :deep(.td) {
+.tpl-editor-head h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.tpl-editor-head p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+}
+
+.tpl-name-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.tpl-name-input {
+  flex: 1;
+}
+
+.tpl-scope-select {
+  width: 220px;
+}
+
+.tpl-editor-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tpl-editor-body :deep(.eq-root) {
   flex: 1;
   min-height: 0;
 }
 
-.tpl-meta-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-@media (max-width: 1200px) {
-  .tpl-grid {
-    grid-template-columns: repeat(2, minmax(240px, 1fr));
-  }
-}
-
-@media (max-width: 800px) {
-  .tpl-library,
-  .tpl-meta-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .tpl-grid {
+@media (max-width: 960px) {
+  .tpl-library {
+    grid-template-rows: minmax(180px, 30%) 1fr;
     grid-template-columns: 1fr;
   }
 }
