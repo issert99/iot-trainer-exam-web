@@ -42,7 +42,7 @@ export function mapExamUserToUserInfo(user: ExamPublicUser): UserInfo {
   return {
     avatar: user.avatarUrl || '',
     desc: [user.department, user.title].filter(Boolean).join(' · ') || '',
-    homePath: '/assessment/dashboard',
+    homePath: role === 'admin' ? '/analytics' : '/workspace',
     realName: user.realName,
     roles: [role],
     token: '',
