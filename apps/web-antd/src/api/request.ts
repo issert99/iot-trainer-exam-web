@@ -15,7 +15,6 @@ import { useAccessStore } from '@vben/stores';
 
 import { message } from 'ant-design-vue';
 
-import { tenantContext } from '#/platform/exam-governance';
 import { useAuthStore } from '#/store';
 
 import { refreshTokenApi } from './core';
@@ -68,8 +67,6 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
 
       config.headers.Authorization = formatToken(accessStore.accessToken);
       config.headers['Accept-Language'] = preferences.app.locale;
-      config.headers['X-Exam-Contract-Version'] = '1.0.0';
-      config.headers['X-Tenant-Id'] = tenantContext.activeTenantId;
       return config;
     },
   });
